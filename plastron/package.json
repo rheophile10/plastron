@@ -1,0 +1,26 @@
+{
+  "name": "plastron",
+  "private": true,
+  "version": "0.0.1",
+  "type": "module",
+  "exports": {
+    ".": "./dist/index.js",
+    "./*": "./dist/*"
+  },
+  "scripts": {
+    "build": "tsc",
+    "check": "tsc --noEmit -p tsconfig.check.json",
+    "test": "vitest run",
+    "test:watch": "vitest"
+  },
+  "devDependencies": {
+    "@types/js-yaml": "^4.0.9",
+    "@types/node": "^25.5.0",
+    "js-yaml": "^4.1.0",
+    "typescript": "~5.9.3",
+    "vitest": "^3.1.0"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  }
+}
