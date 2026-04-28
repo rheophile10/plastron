@@ -1,4 +1,4 @@
-# plastron
+# plastron 🐢
 
 A reactive computation graph engine for TypeScript. Cels hold values or formulas; writing a cel triggers a cycle that recomputes every downstream cel. Spreadsheet semantics, with swappable formula parsers and arbitrary function composition.
 
