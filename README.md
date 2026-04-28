@@ -135,7 +135,7 @@ The Chinese-named facade (`龜卜藏`) borrows characters whose oldest forms com
 <i>kēng / jiào</i>
 </td>
 <td>
-<b>The dugout.</b> Both are later compounds with no oracle-bone form. <b>坑</b> = 土 (earth) + 亢 (phonetic) — a pit dug into the ground. <b>窖</b> = 穴 (cave) + 告 (phonetic) — an underground cellar or cache. At Yinxu the spent plastrons were stacked into <b>甲骨坑</b> (oracle-bone pits) for archival; pit <b>YH127</b> alone yielded ~17,000 inscribed pieces, more than any other single find in the corpus.
+<b>The dugout.</b> Both are later compounds with no oracle-bone form. <b>坑</b> = 土 (earth) + 亢 (phonetic) — a pit dug into the ground. <b>窖</b> = 穴 (cave) + 告 (phonetic) — an underground cellar or cache. At Yinxu the spent plastrons were stacked into <b>甲骨坑</b> (oracle-bone pits) for archival; pit <b>YH127</b> alone yielded ~17,000 inscribed pieces, more than any other single find in the corpus. A minority strand of the scholarship reads the small edge-perforations on certain plastrons as <i>binding holes</i> — evidence the bones were strung into ordered sets the way bamboo slips (<code>簡冊</code>) were bound, an archival format more than a divinatory one.
 <br/><br/>
 <b>plastron:</b> the persistence layer — where hydration draws from and where flushed segments are deposited.
 </td>
