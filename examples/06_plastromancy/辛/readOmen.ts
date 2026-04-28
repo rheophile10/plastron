@@ -26,6 +26,6 @@ export const readOmenMeta: LambdaMetadata = {
   inputSchema:  "binopInput",
   outputSchema: "string",
   arity:        2,
-  filename:     "examples/06_plastronomy/辛/readOmen.ts",
+  filename:     "examples/06_plastromancy/辛/readOmen.ts",
   source:       readOmen.toString(),
 };

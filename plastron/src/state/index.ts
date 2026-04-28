@@ -38,7 +38,7 @@ export const createRuntime = (state: State): State => {
 export type { State, Cel, IsChanged, Cascade, WavedCascade } from "./types/index.js";
 export type { Input } from "./cycle/types.js";
 
-export { hydrate } from "./hydration/index.js";
+export { hydrate, replaceCels } from "./hydration/index.js";
 export type { DehydratedCel, FnRegistry, HydrateOptions } from "./hydration/index.js";
 
 export type {

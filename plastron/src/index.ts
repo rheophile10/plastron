@@ -1,5 +1,5 @@
-import { 龜刻卜 } from "./plastronomy/index.js";
-import type { 龜卜藏 } from "./plastronomy/index.js";
+import { 龜刻卜 } from "./plastromancy/index.js";
+import type { 龜卜藏 } from "./plastromancy/index.js";
 import { createRuntime, hydrate } from "./state/index.js";
 import type { DehydratedCel, FnRegistry, State } from "./state/index.js";
 import type { LambdaMetadata } from "./lambdas/types/lambda.js";
@@ -8,7 +8,7 @@ import type { Key } from "./common.js";
 // ============================================================================
 // plastron / runtime — the two top-level helpers.
 //
-//   plastron()   → a 龜卜藏 (plastronomy face, Chinese methods).
+//   plastron()   → a 龜卜藏 (plastromancy face, Chinese methods).
 //   runtime()    → a plain State (English methods).
 //
 // Both are async; hydrate primes the graph automatically, so the
@@ -54,5 +54,6 @@ export const runtime = async (
 };
 
 export default plastron;
-export { 龜刻卜 } from "./plastronomy/index.js";
-export type { 龜卜藏, 貞 } from "./plastronomy/index.js";
+export { 龜刻卜 } from "./plastromancy/index.js";
+export type { 龜卜藏, 貞, 卜 } from "./plastromancy/index.js";
+export { replaceCels } from "./state/index.js";

@@ -23,6 +23,6 @@ export const crackGeometryMeta: LambdaMetadata = {
   inputSchema:  "binopInput",
   outputSchema: "string",
   arity:        2,
-  filename:     "examples/06_plastronomy/辛/crackGeometry.ts",
+  filename:     "examples/06_plastromancy/辛/crackGeometry.ts",
   source:       crackGeometry.toString(),
 };

@@ -3,7 +3,7 @@ import type { 龜卜藏, 貞 } from "./types.js";
 
 // ========================================================================
 // wrap — proxy a plain State as a 龜卜藏. Thin rebinding of methods
-// under Chinese names. All three — 卜, 貞, 增 — are getters so they stay
+// under Chinese names. All three — 辛, 貞, 增 — are getters so they stay
 // live through incremental hydrate calls.
 // ========================================================================
 
@@ -21,7 +21,7 @@ export const wrap = (state: State): 龜卜藏 => {
       await state.hydrate(cels, lambdas, fnRegistry, options);
       return bound;
     },
-    get 卜() { return state.cycle; },
+    get 辛() { return state.cycle; },
     get 貞() {
       return state.input ? wrapInput(state.input) : undefined;
     },
@@ -36,5 +36,5 @@ const wrapInput = (input: NonNullable<State["input"]>): 貞 => ({
   連刻: input.batch.bind(input),
   重:   input.touch.bind(input),
   施:   input.consume.bind(input),
-  get 待() { return input.buffer; },
+  get 卜() { return input.buffer; },
 } as 貞);

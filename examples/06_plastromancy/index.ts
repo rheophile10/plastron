@@ -1,9 +1,9 @@
 // ============================================================================
-// EXAMPLE 06 — plastronomy: a Shang-era divination ritual with custom
+// EXAMPLE 06 — plastromancy: a Shang-era divination ritual with custom
 // chisels (lambdas) and multiple plastrons (segments).
 //
 // HOW TO RUN:
-//   npx vite-node examples/06_plastronomy/index.ts
+//   npx vite-node examples/06_plastromancy/index.ts
 //
 // FOLDER LAYOUT:
 //   龜/   — "turtles" (segments). One file per plastron.

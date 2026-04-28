@@ -21,6 +21,6 @@ export const ancestorReportMeta: LambdaMetadata = {
   inputSchema:  "itemsInput",
   outputSchema: "string",
   arity:        1,
-  filename:     "examples/06_plastronomy/辛/ancestorReport.ts",
+  filename:     "examples/06_plastromancy/辛/ancestorReport.ts",
   source:       ancestorReport.toString(),
 };

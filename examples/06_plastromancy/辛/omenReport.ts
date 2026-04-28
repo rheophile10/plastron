@@ -29,6 +29,6 @@ export const omenReportMeta: LambdaMetadata = {
   inputSchema:  "object",
   outputSchema: "string",
   arity:        4,
-  filename:     "examples/06_plastronomy/辛/omenReport.ts",
+  filename:     "examples/06_plastromancy/辛/omenReport.ts",
   source:       omenReport.toString(),
 };

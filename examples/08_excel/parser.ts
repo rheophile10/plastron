@@ -21,8 +21,8 @@
 // NOT supported: ranges (A1:A5), sheet refs (Sheet1!A1), array formulas.
 // ============================================================================
 
-import type { Fn, LambdaKey, LambdaMetadata } from "../../../plastron/src/lambdas/types/lambda.js";
-import type { Key } from "../../../plastron/src/state/index.js";
+import type { Fn, LambdaKey, LambdaMetadata } from "../../plastron/src/lambdas/types/lambda.js";
+import type { Key } from "../../plastron/src/common.js";
 
 type Refs = Record<string, unknown>;
 

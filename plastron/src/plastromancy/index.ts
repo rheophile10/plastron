@@ -24,4 +24,4 @@ export const 龜刻卜 = async (
 };
 
 export { wrap } from "./wrap.js";
-export type { 龜卜藏, 貞 } from "./types.js";
+export type { 龜卜藏, 貞, 卜 } from "./types.js";

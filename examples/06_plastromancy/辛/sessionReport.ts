@@ -16,6 +16,6 @@ export const sessionReportMeta: LambdaMetadata = {
   inputSchema:  "binopInput",
   outputSchema: "string",
   arity:        2,
-  filename:     "examples/06_plastronomy/辛/sessionReport.ts",
+  filename:     "examples/06_plastromancy/辛/sessionReport.ts",
   source:       sessionReport.toString(),
 };

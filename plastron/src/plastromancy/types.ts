@@ -5,14 +5,17 @@ import type {
 import type { LambdaMetadata } from "../lambdas/types/lambda.js";
 
 // ========================================================================
-// 龜卜藏 — the plastronomy-themed face of State.
+// 龜卜藏 — the plastromancy-themed face of State.
 //
 //   骨 — "bones": the cels Map.
 //   焚 — "burn": torch a segment.
 //   增 — "augment": incremental hydrate (add more cels / lambdas).
-//   卜 — "crack": the cycle-runner closure.
+//   辛 — "inscribing knife": the cycle-runner. Carves the reading into bone.
 //   貞 — "charge": the write + read surface.
 // ========================================================================
+
+/** 卜 — "crack". The propagating cascade of changes through the shell. */
+export type 卜 = WavedCascade;
 
 export interface 龜卜藏 {
   /** 骨 — the bones. Map<Key, Cel>. */
@@ -29,8 +32,8 @@ export interface 龜卜藏 {
     options?: HydrateOptions,
   ) => Promise<龜卜藏>;
 
-  /** 卜 — crack the oracle. Runs one cycle against the given cascade. */
-  卜?: (cascade: WavedCascade) => Promise<void>;
+  /** 辛 — the inscribing knife. Runs one cycle against the given 卜 (crack). */
+  辛?: (cascade: 卜) => Promise<void>;
 
   /** 貞 — the charging + inspection surface. */
   貞?: 貞;
@@ -44,7 +47,7 @@ export interface 龜卜藏 {
 //   連刻  — carve many in one ritual (batch).
 //   重    — recharge a cold crack (touch).
 //   施    — perform the buffered rites (consume).
-//   待    — pending charges queue (buffer).
+//   卜    — the crack itself: the pending cascade (buffer).
 // ========================================================================
 
 export interface 貞 {
@@ -63,6 +66,6 @@ export interface 貞 {
   /** 施 — perform any buffered rites now (consume). */
   施(): Promise<void>;
 
-  /** 待 — the queue of pending charges awaiting 施 (the buffer). */
-  待: WavedCascade;
+  /** 卜 — the crack: the pending cascade awaiting 施 (the buffer). */
+  卜: 卜;
 }

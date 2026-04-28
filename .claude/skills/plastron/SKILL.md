@@ -27,7 +27,7 @@ await rt.input!.set("qty", 4);
 console.log(rt.input!.get("total"));   // 400
 ```
 
-Or the plastronomy-themed face (same library, Chinese method names):
+Or the plastromancy-themed face (same library, Chinese method names):
 
 ```ts
 import plastron from "plastron";
@@ -62,6 +62,7 @@ Both are async. Both prime the graph automatically.
 | `state.Cels` | The raw `Map<Key, Cel>`. Power-user access. |
 | `state.flush(segmentKey)` | Delete every cel whose `segment` matches. |
 | `state.hydrate(cels, lambdas?, fnRegistry?, options?)` | Incremental hydrate: merge more cels into the same state. Async. Returns the same State. |
+| `replaceCels(state, cels, lambdas?, fnRegistry?)` | Atomically swap one or more cels and rewire the graph. Use when a cel switches role (variable ↔ formula) or a formula's deps change. Mutates target cels in place; rebuilds `children` + `_inputRefs` across the map; runs precompute (which detects cycles). Cost is O(N) over `state.Cels`. |
 
 ### Input methods (attached by runtime/createRuntime — use with `!`)
 | English | Chinese | Purpose |
@@ -71,15 +72,15 @@ Both are async. Both prime the graph automatically.
 | `input.batch(writes)` | `貞.連刻(writes)` | Array of `[key, value]`; merged into one cycle. |
 | `input.touch(key)` | `貞.重(key)` | Force cel + downstream to re-fire. |
 | `input.consume()` | `貞.施()` | Manual mode: drain buffer and run. |
-| `input.buffer` | `貞.待` | Manual mode: pending cascade. |
+| `input.buffer` | `貞.卜` | Manual mode: pending cascade (the crack). |
 
-### Plastronomy facade (on `龜卜藏` returned by `plastron()`)
+### Plastromancy facade (on `龜卜藏` returned by `plastron()`)
 | State member | Chinese | |
 |---|---|---|
 | `Cels` | `骨` | the bones |
 | `flush` | `焚` | burn |
 | `hydrate` | `增` | augment |
-| `cycle` | `卜` | crack |
+| `cycle` | `辛` | inscribing knife (one cycle of reading) |
 | `input` | `貞` | charge |
 
 ### Entry points
@@ -297,7 +298,7 @@ src/
       runCycle.ts               the cycle runner builder
       input.ts                  makeInput (get, set, batch, touch, consume)
       cascade.ts                mergeCascades, mergeDynamicCascade
-  plastronomy/                  Chinese façade: 龜卜藏, wrap(), 龜刻卜()
+  plastromancy/                  Chinese façade: 龜卜藏, wrap(), 龜刻卜()
 ```
 
 ---
