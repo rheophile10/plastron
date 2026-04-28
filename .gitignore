@@ -20,3 +20,7 @@ coverage/
 
 # Claude Code — per-user settings (skills and shared config stay tracked)
 .claude/settings.local.json
+.claude/scheduled_tasks.lock
+
+# Personal scratch
+criticism.md

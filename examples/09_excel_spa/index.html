@@ -1,0 +1,33 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Plastron · Excel SPA</title>
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="formula-bar">
+        <span id="active-cell-label">A1</span>
+        <input id="formula-input" type="text" autocomplete="off" spellcheck="false" />
+      </header>
+      <main id="grid-wrap">
+        <div id="grid"></div>
+      </main>
+      <aside id="cascade-log">
+        <header>
+          <h3>Calculation cycle</h3>
+          <label>
+            step delay
+            <input id="step-delay" type="range" min="0" max="800" step="20" value="180" />
+            <span id="step-delay-label">180ms</span>
+          </label>
+          <button id="clear-log" type="button">clear</button>
+        </header>
+        <pre id="cascade-content">(no edits yet — try editing a cell)</pre>
+      </aside>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
