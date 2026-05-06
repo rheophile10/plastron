@@ -1,0 +1,10 @@
+{
+  "name": "plastromancy-example",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Plastromancy showcase — every plastron feature in one Shang-era ritual.",
+  "scripts": {
+    "start": "tsx src/index.ts"
+  }
+}
