@@ -1,0 +1,8 @@
+{
+  "name": "plastron-archive",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Read and write plastron documents to disk as `.甲` files — canonical-JSON archives carrying every segment, manifest, fingerprint, and dependency declaration in one self-contained artifact.",
+  "main": "src/index.ts"
+}
