@@ -1,0 +1,8 @@
+{
+  "name": "plastron-trust",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Ed25519 signing/verification + policy modes for plastron segment manifests.",
+  "main": "src/index.ts"
+}

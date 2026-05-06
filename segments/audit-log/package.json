@@ -1,0 +1,8 @@
+{
+  "name": "audit-log",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "A reusable plastron segment that captures cycle activity into an append-only log cel.",
+  "main": "src/index.ts"
+}
