@@ -24,3 +24,8 @@ coverage/
 
 # Personal scratch
 criticism.md
+
+# Architecture working docs — local only
+core-plan.md
+examples-roadmap.md
+pitches.md
