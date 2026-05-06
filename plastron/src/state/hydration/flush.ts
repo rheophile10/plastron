@@ -1,6 +1,7 @@
 import type { Key } from "../../common.js";
 import type { State } from "../types/index.js";
 import type { SegmentCelsIndex, TagIndex } from "../segments/types/index.js";
+import { releaseValue } from "../cycle/cascade.js";
 
 // ========================================================================
 // flush — remove a segment from State. Reads the segmentCelsIndex off the
@@ -17,6 +18,19 @@ export const flush = (state: State, segmentKey: Key): void => {
   const celsToRemove = flushIndex.get(segmentKey);
 
   if (celsToRemove) {
+    // Run kind-handler dispose hooks and release any tagged value
+    // resources before deleting cels. Errors are swallowed so a
+    // misbehaving handler can't block the flush.
+    const tags = state._tags;
+    for (const key of celsToRemove) {
+      const cel = cm.get(key);
+      if (!cel) continue;
+      if (cel._dispose) {
+        try { cel._dispose(); } catch { /* swallow */ }
+      }
+      releaseValue(cel.v, tags);
+    }
+
     for (const key of celsToRemove) cm.delete(key);
 
     const tagIndexCel = cm.get("tagIndex");

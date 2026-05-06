@@ -1,28 +1,28 @@
-import { 龜刻卜 } from "./plastromancy/index.js";
-import type { 龜卜藏 } from "./plastromancy/index.js";
-import { createRuntime, hydrate } from "./state/index.js";
-import type { DehydratedCel, FnRegistry, State } from "./state/index.js";
+import { createRuntime, hydrate, hydrateBundles } from "./state/index.js";
+import type { DehydratedCel, FnRegistry, HydrateOptions, State, SegmentBundle } from "./state/index.js";
 import type { LambdaMetadata } from "./lambdas/types/lambda.js";
 import type { Key } from "./common.js";
+import { installAllDefaults } from "./segments/defaults/index.js";
 
 // ============================================================================
-// plastron / runtime — the two top-level helpers.
+// plastron / runtime — the top-level entry points.
 //
-//   plastron()   → a 龜卜藏 (plastromancy face, Chinese methods).
-//   runtime()    → a plain State (English methods).
+//   runtime(cels, lambdas, fnRegistry, options)
+//     The English-named, cels-and-lambdas hydration path. Returns a
+//     primed State with cycle + input attached and the default segments
+//     (changeIndices, errors) installed.
 //
-// Both are async; hydrate primes the graph automatically, so the
-// returned object is fully computed — no caller-side priming.
+//   runtimeFromBundles(bundles, fnRegistry, options)
+//     The bundle-shaped variant. Each SegmentBundle carries its own
+//     cels, lambda metadata, aliases, segment metadata, and optional
+//     cryptographic manifest. options.verifySegment is consulted per
+//     bundle when a manifest is present.
 //
-// Both accept three bundles:
-//   cels       — arrays of Record<Key, DehydratedCel>. One record per
-//                segment is typical; multiple records hydrate together.
-//                Load from JSON yourself via JSON.parse if that's your
-//                source format.
-//   lambdas    — arrays of LambdaMetadata records for any custom lambdas.
-//   fnRegistry — actual fn implementations, keyed by lambda key.
-//
-// For direct low-level access, import from "plastron/state".
+//   plastron(...)
+//     Default export — alias for runtime(). Plastron core is English-
+//     named; the plastromancy 龜卜藏 facade lives in the showcase
+//     example (examples/plastromancy/src/mask/), demonstrating that
+//     custom facades sit cleanly on top of the kernel.
 // ============================================================================
 
 const helloWorldCels = (): Record<string, DehydratedCel> => {
@@ -38,22 +38,68 @@ const helloWorldCels = (): Record<string, DehydratedCel> => {
   };
 };
 
-const plastron = (
-  cels: Record<Key, DehydratedCel>[] = [helloWorldCels()],
-  lambdas: Record<Key, LambdaMetadata>[] = [],
-  fnRegistry: FnRegistry = {},
-): Promise<龜卜藏> => 龜刻卜(cels, lambdas, fnRegistry);
-
 export const runtime = async (
   cels: Record<Key, DehydratedCel>[] = [helloWorldCels()],
   lambdas: Record<Key, LambdaMetadata>[] = [],
   fnRegistry: FnRegistry = {},
+  options?: HydrateOptions,
 ): Promise<State> => {
-  const state = await hydrate(cels, lambdas, fnRegistry);
-  return createRuntime(state);
+  const state = await hydrate(cels, lambdas, fnRegistry, undefined, options);
+  const rt = createRuntime(state);
+  if (options?.installDefaults !== false) {
+    await installAllDefaults(rt);
+  }
+  return rt;
 };
 
+export const runtimeFromBundles = async (
+  bundles: SegmentBundle[],
+  fnRegistry: FnRegistry = {},
+  options?: HydrateOptions,
+): Promise<State> => {
+  const state = await hydrateBundles(bundles, fnRegistry, undefined, options);
+  const rt = createRuntime(state);
+  if (options?.installDefaults !== false) {
+    await installAllDefaults(rt);
+  }
+  return rt;
+};
+
+const plastron = runtime;
 export default plastron;
-export { 龜刻卜 } from "./plastromancy/index.js";
-export type { 龜卜藏, 貞, 卜 } from "./plastromancy/index.js";
+
 export { replaceCels } from "./state/index.js";
+export type {
+  LambdaKindHandler, KindContext, KindRegistry, CompiledLambda, DisposeFn,
+} from "./lambdas/types/kind.js";
+export type {
+  SegmentRole, SegmentMetadata, SegmentRegistry,
+} from "./state/segments/types/index.js";
+export type {
+  HookSubscription, HookName,
+  BeforeCycleEvent, AfterLambdaInvokeEvent, AfterWaveEvent,
+  AfterCycleEvent, AfterHydrateEvent,
+} from "./state/cycle/hooks.js";
+export type {
+  TaggedValue, TagProtocol, TagRegistry,
+} from "./state/types/tags.js";
+export {
+  TAG_FIELD, TAG_VALUE_FIELD, isTaggedValue, tagged,
+} from "./state/types/tags.js";
+export type {
+  SegmentBundle, SegmentManifest, SegmentCapabilities, VerificationResult,
+} from "./state/segments/types/index.js";
+export { BUNDLE_FORMAT_VERSION } from "./state/segments/types/index.js";
+export {
+  canonicalize, sha256Hex, bundleContentHash, validateBundleVersion,
+} from "./state/segments/serialization.js";
+export { nativeKind } from "./lambdas/kinds/native.js";
+export {
+  fingerprint, fingerprintComponents, ENGINE_VERSION,
+} from "./state/fingerprint.js";
+export type { FingerprintComponents } from "./state/fingerprint.js";
+export {
+  installChangeIndices, installErrors, installAllDefaults,
+  changeIndicesCels, changeIndicesHook, CHANGE_INDICES_SEGMENT,
+  errorsCels, errorsHook, ERRORS_SEGMENT,
+} from "./segments/defaults/index.js";

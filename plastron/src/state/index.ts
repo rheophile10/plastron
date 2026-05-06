@@ -35,11 +35,25 @@ export const createRuntime = (state: State): State => {
 // Re-exports — the public state API surface.
 // ------------------------------------------------------------------------
 
-export type { State, Cel, IsChanged, Cascade, WavedCascade } from "./types/index.js";
+export type {
+  State, Cel, IsChanged, Cascade, WavedCascade,
+  TaggedValue, TagProtocol, TagRegistry,
+} from "./types/index.js";
+export {
+  TAG_FIELD, TAG_VALUE_FIELD, isTaggedValue, tagged,
+} from "./types/index.js";
 export type { Input } from "./cycle/types.js";
+export type {
+  HookSubscription, HookName,
+  BeforeCycleEvent, AfterLambdaInvokeEvent, AfterWaveEvent,
+  AfterCycleEvent, AfterHydrateEvent,
+} from "./cycle/hooks.js";
 
-export { hydrate, replaceCels } from "./hydration/index.js";
+export { hydrate, hydrateBundles, replaceCels } from "./hydration/index.js";
 export type { DehydratedCel, FnRegistry, HydrateOptions } from "./hydration/index.js";
+
+export { fingerprint, fingerprintComponents, ENGINE_VERSION } from "./fingerprint.js";
+export type { FingerprintComponents } from "./fingerprint.js";
 
 export type {
   RecalculationMode, RecalculationConfig,
@@ -47,4 +61,10 @@ export type {
   ErrorInfo, Errors,
   TagIndex, DownstreamTopology, DynamicCascade, DynamicKeys,
   SegmentCelsIndex,
+  SegmentRole, SegmentMetadata, SegmentRegistry,
+  SegmentBundle, SegmentManifest, SegmentCapabilities, VerificationResult,
 } from "./segments/types/index.js";
+export { BUNDLE_FORMAT_VERSION } from "./segments/types/index.js";
+export {
+  canonicalize, sha256Hex, bundleContentHash, validateBundleVersion,
+} from "./segments/serialization.js";

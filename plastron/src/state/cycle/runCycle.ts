@@ -2,41 +2,20 @@ import type { Key, varName } from "../../common.js";
 import type { State } from "../types/index.js";
 import type { Cel } from "../types/cel.js";
 import type { WavedCascade } from "./types.js";
-import type { SchemaRecords } from "../../schemas/types/schema.js";
-import type {
-  RecalculationConfig, ChangeIndexConfig, ChangeIndices,
-  Errors, ErrorInfo,
-} from "../segments/types/index.js";
-import { defaultIsChanged } from "./cascade.js";
+import type { HookSubscription } from "./hooks.js";
+import type { TagRegistry } from "../types/tags.js";
+import { isCelChanged, releaseValue } from "./cascade.js";
+import { fireHook } from "./hooks.js";
 
-// ========================================================================
-// Error tracking — maintains the reserved `errors` cel inline during the
-// cycle.
-// ========================================================================
-
-const setError = (cels: Map<Key, Cel>, key: Key, err: unknown, code: string, inputs: Record<string, unknown>): void => {
-  const errorsCel = cels.get("errors");
-  if (!errorsCel) return;
-  const map = (errorsCel.v ?? {}) as Errors;
-  const info: ErrorInfo = {
-    error: String(err),
-    at: Date.now(),
-    inputs,
-    ...(code !== "*" && { code }),
-  };
-  map[key] = info;
-  errorsCel.v = map;
-};
-
-const clearError = (cels: Map<Key, Cel>, key: Key): void => {
-  const errorsCel = cels.get("errors");
-  if (!errorsCel) return;
-  const map = (errorsCel.v ?? {}) as Errors;
-  if (key in map) {
-    delete map[key];
-    errorsCel.v = map;
-  }
-};
+// Error capture is now a default segment subscribed to afterLambdaInvoke.
+// See src/segments/defaults/errors.ts. The cycle reports errors through
+// the hook event payload; this module no longer maintains an error cel
+// directly.
+//
+// Schema validation is now an opt-in kind-handler wrapper. See the
+// plastron-schemas extension package for withSchemaValidation. The
+// cycle no longer enforces strictTypes inline; the wrapper applies
+// per-invocation pre/post validation when its conditions are met.
 
 // ========================================================================
 // runCycle — builder for State.cycle. Takes the state object, returns the
@@ -47,10 +26,12 @@ export const runCycle = (state: State) => async (cascade: WavedCascade): Promise
   if (cascade.size === 0) return;
 
   const cels = state.Cels;
+  const hooks = state._hooks;
+  const tags = state._tags;
   const changedKeys = new Set<Key>();
   const sortedWaves = Array.from(cascade.keys()).sort((a, b) => a - b);
 
-  resetChangeIndices(cels);
+  fireHook(hooks, "beforeCycle", { cascade });
 
   for (const w of sortedWaves) {
     const subCascade = cascade.get(w)!;
@@ -68,55 +49,19 @@ export const runCycle = (state: State) => async (cascade: WavedCascade): Promise
             return;
           }
 
-          const didChange = await runLambdaCel(cel, cels, changedKeys, w);
+          const didChange = await runLambdaCel(cel, cels, changedKeys, w, hooks, tags);
           if (didChange) changedInThisWave.add(key);
         })
       );
     }
 
-    appendChangeIndicesForWave(w, changedInThisWave, cels);
-  }
-};
-
-const resetChangeIndices = (cels: Map<Key, Cel>): void => {
-  const configCel = cels.get("changeIndexConfig");
-  const indicesCel = cels.get("changeIndices");
-  if (!configCel || !indicesCel) return;
-
-  const config = (configCel.v ?? {}) as ChangeIndexConfig;
-  const result: ChangeIndices = {};
-  for (const name of Object.keys(config)) {
-    result[name] = [];
-  }
-  indicesCel.v = result;
-};
-
-const appendChangeIndicesForWave = (wave: number, changedInWave: Set<Key>, cels: Map<Key, Cel>): void => {
-  const configCel = cels.get("changeIndexConfig");
-  const indicesCel = cels.get("changeIndices");
-  if (!configCel || !indicesCel) return;
-
-  const config = (configCel.v ?? {}) as ChangeIndexConfig;
-  const indices = (indicesCel.v ?? {}) as ChangeIndices;
-
-  for (const [indexName, tagList] of Object.entries(config)) {
-    const keys: Key[] = [];
-    for (const key of changedInWave) {
-      const cel = cels.get(key);
-      if (!cel) continue;
-      if (tagList.length === 0) {
-        keys.push(key);
-      } else if (cel.tags?.some(t => tagList.includes(t))) {
-        keys.push(key);
-      }
-    }
-    const arr = indices[indexName] ?? [];
-    while (arr.length <= wave) arr.push([]);
-    arr[wave] = keys;
-    indices[indexName] = arr;
+    fireHook(hooks, "afterWave", {
+      waveIndex: w,
+      changedKeys: [...changedInThisWave],
+    });
   }
 
-  indicesCel.v = indices;
+  fireHook(hooks, "afterCycle", { allChanges: [...changedKeys] });
 };
 
 const runLambdaCel = async (
@@ -124,6 +69,8 @@ const runLambdaCel = async (
   cels: Map<Key, Cel>,
   changedKeys: Set<Key>,
   currentWave: number,
+  hooks: HookSubscription[] | undefined,
+  tags: TagRegistry | undefined,
 ): Promise<boolean> => {
   const key = cel.key;
   if (!cel.l) return false;
@@ -139,7 +86,11 @@ const runLambdaCel = async (
 
   const fn = cel._fn;
   if (!fn) {
-    setError(cels, key, `Lambda missing: ${cel.l}`, "MISSING_LAMBDA", {});
+    const err = new Error(`Lambda missing: ${cel.l}`);
+    (err as Error & { code?: string }).code = "MISSING_LAMBDA";
+    fireHook(hooks, "afterLambdaInvoke", {
+      key, inputs: {}, durationMs: 0, error: err,
+    });
     return false;
   }
 
@@ -170,53 +121,24 @@ const runLambdaCel = async (
   };
 
   try {
-    // TODO: extract strict-mode input/output validation into a helper
-    //       validate(schemaKey, value, state): boolean (or throw-on-fail)
-    //       so the cycle loop stops depending on zod directly. Useful
-    //       if we ever want to swap out the schema library, and would
-    //       give callers an ad-hoc validate() hook they can call outside
-    //       a cycle too.
-    const recalcCfg = (cels.get("config_recalculation")?.v ?? {}) as RecalculationConfig;
-    const strict = recalcCfg.strictTypes === true;
-    const schemas = strict
-      ? ((cels.get("config_schemas")?.v ?? {}) as SchemaRecords)
-      : undefined;
-    const meta = cel._lambdaMeta;
-
-    if (strict && meta?.inputSchema && schemas) {
-      const inSchema = schemas[meta.inputSchema];
-      if (inSchema) {
-        const parsed = inSchema.zod.safeParse(inputs);
-        if (!parsed.success) {
-          throw new Error(
-            `Input for lambda "${cel.l}" fails schema "${meta.inputSchema}": ${parsed.error.message}`
-          );
-        }
-      }
-    }
-
     const prev = cel.v;
+    const startedAt = performance.now();
     const result = fn(inputs);
     const finalValue = await Promise.resolve(result);
+    const durationMs = performance.now() - startedAt;
 
-    if (strict && meta?.outputSchema && schemas) {
-      const outSchema = schemas[meta.outputSchema];
-      if (outSchema) {
-        const parsed = outSchema.zod.safeParse(finalValue);
-        if (!parsed.success) {
-          throw new Error(
-            `Output of lambda "${cel.l}" fails schema "${meta.outputSchema}": ${parsed.error.message}`
-          );
-        }
-      }
-    }
+    fireHook(hooks, "afterLambdaInvoke", {
+      key, inputs, output: finalValue, durationMs,
+    });
 
-    clearError(cels, key);
-
-    const outputIsChanged = cel.isChanged ?? defaultIsChanged;
-    const changed = outputIsChanged(prev, finalValue);
+    const changed = isCelChanged(cel, prev, finalValue, tags);
 
     if (changed) {
+      // Release the prior value's handler-side resources before
+      // installing the new one. No-op for untagged values or tags
+      // without a release entry.
+      releaseValue(prev, tags);
+
       const depth = cel.prevDepth ?? 0;
       if (depth > 0) {
         // Push finalValue (not prev) so the lambda's _prev[0] on the
@@ -230,11 +152,10 @@ const runLambdaCel = async (
     }
     return false;
   } catch (err) {
-    const errorCode = (err instanceof Error && "code" in err)
-      ? String((err as any).code)
-      : "*";
     console.error(`Calculation failed for cell ${key}:`, err);
-    setError(cels, key, err, errorCode, inputs);
+    fireHook(hooks, "afterLambdaInvoke", {
+      key, inputs, durationMs: 0, error: err,
+    });
     return false;
   }
 };

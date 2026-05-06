@@ -2,7 +2,7 @@ import type { Key } from "../../common.js";
 import type { State } from "../types/index.js";
 import type { WavedCascade, Input } from "./types.js";
 import type { RecalculationMode, RecalculationConfig, DownstreamTopology } from "../segments/types/index.js";
-import { defaultIsChanged, mergeCascades, mergeDynamicCascade } from "./cascade.js";
+import { isCelChanged, releaseValue, mergeCascades, mergeDynamicCascade } from "./cascade.js";
 
 // ========================================================================
 // makeInput — the write surface attached to State. Holds the pending buffer
@@ -78,13 +78,16 @@ const cellValueWrite = (state: State, key: Key, value: unknown): WavedCascade =>
   if (cel.readOnly) throw Error(`Cel "${key}" is read-only`);
   if (cel.l) throw Error(`Cel "${key}" is a lambda — cannot write directly`);
 
-  const isChanged = cel.isChanged ?? defaultIsChanged;
-  if (!isChanged(cel.v, value)) return new Map();
+  const tags = state._tags;
+  if (!isCelChanged(cel, cel.v, value, tags)) return new Map();
 
   const downstreamTopology = cels.get("downstreamTopology")?.v as DownstreamTopology | undefined;
   const downstream = downstreamTopology?.get(key);
   if (!downstream) throw Error(`Key not in downstream topology index: ${key}`);
 
+  // Release the prior value's handler-side resources before installing
+  // the new one (no-op for untagged values).
+  releaseValue(cel.v, tags);
   cel.v = value;
   return mergeDynamicCascade(downstream, state);
 };

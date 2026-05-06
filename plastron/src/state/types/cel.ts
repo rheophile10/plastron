@@ -34,7 +34,9 @@ export interface Cel extends Common {
   schema?:       SchemaKey;
   layer?:        number;
 
-  /** Per-cel change predicate. Default: !Object.is(a, b). */
+  /** Per-cel change predicate. Default: !Object.is(a, b). May fall back
+   *  to a per-tag comparator from the format-tagged value protocol when
+   *  cel.v carries an opaque tag. */
   isChanged?:    IsChanged;
 
   tags?:         string[];
@@ -44,12 +46,30 @@ export interface Cel extends Common {
   /** Lambda key. Presence makes this cel "computed." Mutually exclusive with `f`. */
   l?:            LambdaKey;
 
+  /** Lambda kind selector. Identifies which LambdaKindHandler in the
+   *  runtime's kind registry should prepare and invoke this cel's lambda.
+   *  Defaults to "native" (FnRegistry-backed) when unset. Other kinds —
+   *  formula, quickjs, python, sqlite, eshkol, etc. — are registered by
+   *  extension packages. */
+  kind?:         string;
+
   /** Maps lambda input names to upstream cel keys. */
   inputMap?:     Record<varName, Key | Key[]>;
+
+  /** Code-loading dependencies (module cels for polyglot kinds), distinct
+   *  from inputMap which is per-cycle value flow. Hydration uses imports
+   *  to resolve module load order before lambdas are prepared; the cycle
+   *  ignores it. */
+  imports?:      Key[];
 
   /** Inline formula string. Evaluated via config_recalculation.formulaParser.
    *  Deps auto-extracted at hydrate. Mutually exclusive with `l` + `inputMap`. */
   f?:            string;
+
+  /** Hint about the value's expected size. Devtools may surface heavy
+   *  cels; segments may opt out of expensive operations (snapshotting,
+   *  hashing) on large values. Pure metadata; cycle ignores it. */
+  sizeHint?:     "small" | "large" | "stream";
 
   /** If true, recomputes every cycle regardless of whether inputs changed. */
   dynamic?:      boolean;
@@ -75,4 +95,9 @@ export interface Cel extends Common {
   /** Transient — set by input.touch() to force a lambda cel to re-run
    *  despite unchanged inputs. Cleared by runCycle after processing. */
   _touched?:     boolean;
+
+  /** Hydrated — optional cleanup callback installed by the kind handler
+   *  for this cel. Invoked by flush to free WASM allocations, kill
+   *  workers, finalize prepared statements, etc. */
+  _dispose?:     () => void;
 }

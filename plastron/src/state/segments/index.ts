@@ -17,3 +17,9 @@ export const defaultCells = [
   ...stateMethodCells,
   ...inputMethodCells,
 ];
+
+// Re-exports — canonical serialization helpers and bundle types live
+// in this package and are part of the public API.
+export {
+  canonicalize, sha256Hex, bundleContentHash, validateBundleVersion,
+} from "./serialization.js";

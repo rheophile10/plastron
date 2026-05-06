@@ -18,6 +18,11 @@ export interface Fn<I = unknown, O = unknown> {
  *  by lambda key. */
 export interface LambdaMetadata extends Common {
   key: LambdaKey;
+  /** Lambda kind. Defaults to "native" (FnRegistry-backed) when unset.
+   *  Other kinds — formula, quickjs, python, sqlite, eshkol, etc. — are
+   *  registered by extension packages and must be supplied to runtime()
+   *  via the `kinds` option. */
+  kind?: string;
   /** Registered schema key for the lambda's input shape. Used for LLM
    *  metadata and for runtime validation when config_recalculation.strictTypes is true. */
   inputSchema?: SchemaKey;
@@ -29,6 +34,8 @@ export interface LambdaMetadata extends Common {
   prevMinDepth?: number;
   /** Relative path (from src/lambdas/) to the file the fn lives in. */
   filename?: string;
-  /** Stringified function body — useful for LLMs and archival. */
+  /** Stringified function body — useful for LLMs and archival. For
+   *  non-native kinds, this is the source string the kind handler will
+   *  compile (Python source, Scheme expression, SQL query, etc.). */
   source?: string;
 }

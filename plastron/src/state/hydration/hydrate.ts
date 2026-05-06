@@ -2,15 +2,18 @@ import type { Key } from "../../common.js";
 import type { State } from "../types/index.js";
 import type { Cel } from "../types/cel.js";
 import type { Fn, LambdaKey, LambdaMetadata } from "../../lambdas/types/lambda.js";
+import type { KindRegistry } from "../../lambdas/types/kind.js";
 import type { SchemaRecords } from "../../schemas/types/schema.js";
 import type { DehydratedCel, FnRegistry, HydrateOptions } from "./types.js";
-import type { TagIndex } from "../segments/types/index.js";
+import type { TagIndex, SegmentRegistry } from "../segments/types/index.js";
 import { flush, rebuildFlushIndex } from "./flush.js";
 import { defaultCells } from "../segments/index.js";
 import { defaultFns, defaultMetadata } from "../../lambdas/index.js";
+import { nativeKind } from "../../lambdas/kinds/native.js";
 import { defaultSchemas } from "../../schemas/index.js";
 import { precompute } from "./precompute.js";
-import { buildInitialCascade, runCycle } from "../cycle/index.js";
+import { buildInitialCascade, runCycle, fireHook } from "../cycle/index.js";
+import { fingerprint, fingerprintComponents } from "../fingerprint.js";
 
 type CelMap = Map<Key, Cel>;
 
@@ -28,9 +31,12 @@ const bootstrap = (): State => {
   const Cels = new Map<Key, Cel>();
   const state: State = {
     Cels,
+    _kinds: { native: nativeKind },
     flush: (segmentKey) => flush(state, segmentKey),
     hydrate: (moreCels, moreLambdas, moreFnRegistry, options) =>
       hydrate(moreCels, moreLambdas ?? [], moreFnRegistry ?? {}, state, options),
+    fingerprint: () => fingerprint(state),
+    fingerprintComponents: () => fingerprintComponents(state),
   };
   for (const cel of defaultCells) Cels.set(cel.key, cel);
 
@@ -78,6 +84,38 @@ export const hydrate = async (
     }
   }
 
+  if (options?.aliases) {
+    const aliasCel = cm.get("config_opAliases");
+    if (aliasCel) {
+      aliasCel.v = { ...(aliasCel.v as Record<string, Key>), ...options.aliases };
+    }
+  }
+
+  if (options?.segments) {
+    const registryCel = cm.get("segmentRegistry");
+    if (registryCel) {
+      const current = (registryCel.v ?? {}) as SegmentRegistry;
+      const merged: SegmentRegistry = { ...current };
+      for (const [segKey, meta] of Object.entries(options.segments)) {
+        merged[segKey] = { ...meta, key: segKey };
+      }
+      registryCel.v = merged;
+    }
+  }
+
+  if (options?.kinds) {
+    state._kinds = { ...(state._kinds ?? {}), ...options.kinds };
+  }
+
+  if (options?.hooks) {
+    const incoming = Array.isArray(options.hooks) ? options.hooks : [options.hooks];
+    state._hooks = [...(state._hooks ?? []), ...incoming];
+  }
+
+  if (options?.tags) {
+    state._tags = { ...(state._tags ?? {}), ...options.tags };
+  }
+
   const callMeta: Record<LambdaKey, LambdaMetadata> = {};
   for (const [key, meta] of metaEntries) callMeta[key] = { ...meta, key };
 
@@ -107,7 +145,7 @@ export const hydrate = async (
 
   expandFormulaCels(cm, newCelKeys, resolveFn);
   autoWireChildren(cm, newCelKeys);
-  hydrateReferences(cm, newCelKeys, resolveFn, resolveMeta);
+  hydrateReferences(cm, newCelKeys, resolveMeta, state._kinds ?? { native: nativeKind }, fnRegistry);
   validatePrevDepth(cm, newCelKeys);
   validateInitialValues(cm, newCelKeys);
   mergeTagIndex(cm, newCelKeys);
@@ -123,6 +161,13 @@ export const hydrate = async (
   state.cycle = runCycle(state);
   const initial = buildInitialCascade(state);
   if (initial.size > 0) await state.cycle(initial);
+
+  // Fire afterHydrate. Subscribers can read state.Cels and the
+  // segmentRegistry to know what loaded. The fingerprint is computed
+  // and included in the payload — verifier and audit-log segments use
+  // it as the runtime-composition identifier.
+  const fp = await fingerprint(state);
+  fireHook(state._hooks, "afterHydrate", { fingerprint: fp });
 
   return state;
 };
@@ -146,8 +191,11 @@ const inflateCel = (key: Key, dc: DehydratedCel): Cel => {
   if (dc.schema !== undefined)      cel.schema = dc.schema;
   if (dc.readOnly !== undefined)    cel.readOnly = dc.readOnly;
   if (dc.l !== undefined)           cel.l = dc.l;
+  if (dc.kind !== undefined)        cel.kind = dc.kind;
   if (dc.inputMap !== undefined)    cel.inputMap = { ...dc.inputMap };
+  if (dc.imports !== undefined)     cel.imports = [...dc.imports];
   if (dc.f !== undefined)           cel.f = dc.f;
+  if (dc.sizeHint !== undefined)    cel.sizeHint = dc.sizeHint;
   if (dc.dynamic !== undefined)     cel.dynamic = dc.dynamic;
   if (dc.wave !== undefined)        cel.wave = dc.wave;
   if (dc.prevDepth !== undefined)   cel.prevDepth = dc.prevDepth;
@@ -155,6 +203,10 @@ const inflateCel = (key: Key, dc: DehydratedCel): Cel => {
   if (dc.name !== undefined)        cel.name = dc.name;
   if (dc.description !== undefined) cel.description = dc.description;
   if (dc.metadata !== undefined)    cel.metadata = dc.metadata;
+  if (dc.authoredBy !== undefined)  cel.authoredBy = dc.authoredBy;
+  if (dc.generatedAt !== undefined) cel.generatedAt = dc.generatedAt;
+  if (dc.promptId !== undefined)    cel.promptId = dc.promptId;
+  if (dc.agentModel !== undefined)  cel.agentModel = dc.agentModel;
   return cel;
 };
 
@@ -256,18 +308,42 @@ const validateInitialValues = (cm: CelMap, newKeys: Key[]): void => {
 const hydrateReferences = (
   cm: CelMap,
   newKeys: Key[],
-  resolveFn: (key: LambdaKey) => Fn | undefined,
   resolveMeta: (key: LambdaKey) => LambdaMetadata | undefined,
+  kindRegistry: KindRegistry,
+  fnRegistry: FnRegistry,
 ): void => {
   for (const key of newKeys) {
     const cel = cm.get(key);
     if (!cel?.l) continue;
 
-    const fn = resolveFn(cel.l);
-    if (fn) cel._fn = fn;
-
     const meta = resolveMeta(cel.l);
     if (meta) cel._lambdaMeta = meta;
+
+    // Select kind: cel.kind wins, then meta.kind, default "native".
+    const kindKey = cel.kind ?? meta?.kind ?? "native";
+    const handler = kindRegistry[kindKey];
+    if (!handler) {
+      const available = Object.keys(kindRegistry).join(", ") || "(none)";
+      throw new Error(
+        `Cel "${cel.key}" requests lambda kind "${kindKey}" but no handler is registered. ` +
+        `Available kinds: ${available}. Pass kinds via runtime() options or HydrateOptions.`
+      );
+    }
+
+    // Replace any previous _dispose before installing a new compiled lambda.
+    if (cel._dispose) {
+      try { cel._dispose(); } catch { /* swallow — dispose must not crash hydrate */ }
+      cel._dispose = undefined;
+    }
+
+    const compiled = handler.prepare({
+      cel,
+      meta,
+      cels: cm,
+      fnRegistry,
+    });
+    if (compiled.fn) cel._fn = compiled.fn;
+    if (compiled.dispose) cel._dispose = compiled.dispose;
 
     if (cel.inputMap) {
       const refs: Record<string, Cel | Cel[]> = {};

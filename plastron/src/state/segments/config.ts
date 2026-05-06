@@ -1,7 +1,8 @@
 import type { Cel } from "../types/cel.js";
 import type {
-  RecalculationConfig, ChangeIndexConfig, ChangeIndices, Errors,
+  RecalculationConfig,
 } from "./types/config.js";
+import type { SegmentRegistry } from "./types/segments.js";
 import type { SchemaRecords } from "../../schemas/types/schema.js";
 import { defaultAliases } from "../../lambdas/formula/aliases.js";
 
@@ -41,30 +42,11 @@ const configSchemas: Cel = {
   readOnly: true,
 };
 
-const configChangeIndexConfig: Cel = {
-  key: "changeIndexConfig",
-  name: "Change Index Config",
-  description: "Named change-tracking indices. { indexName: tagList }. Empty tag list = catch-all.",
-  v: {} satisfies ChangeIndexConfig,
-  children: [],
-  segment: "config",
-};
-
-const configChangeIndices: Cel = {
-  key: "changeIndices",
-  name: "Change Indices",
-  description: "Runtime-populated each cycle, wave-partitioned. { indexName: Key[][] } — outer index = wave number.",
-  v: {} satisfies ChangeIndices,
-  children: [],
-  segment: "config",
-  dynamic: true,
-};
-
-const configErrors: Cel = {
-  key: "errors",
-  name: "Errors",
-  description: "Runtime-populated. Map of cel key → ErrorInfo for cels in unrecovered error state.",
-  v: {} satisfies Errors,
+const configSegmentRegistry: Cel = {
+  key: "segmentRegistry",
+  name: "Segment Registry",
+  description: "Per-segment metadata (role, loadByDefault, dependencies, manifest). Populated by hydrate from HydrateOptions.segments. Consumers: load-policy filters, audit logs, devtools.",
+  v: {} satisfies SegmentRegistry,
   children: [],
   segment: "config",
 };
@@ -74,7 +56,5 @@ export const configCells: Cel[] = [
   configRecalculation,
   configOpAliases,
   configSchemas,
-  configChangeIndexConfig,
-  configChangeIndices,
-  configErrors,
+  configSegmentRegistry,
 ];

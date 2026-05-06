@@ -1,15 +1,52 @@
 import type { Key } from "../../common.js";
 import type { State } from "../types/index.js";
-import type { IsChanged } from "../types/cel.js";
+import type { Cel, IsChanged } from "../types/cel.js";
 import type { Cascade, WavedCascade } from "./types.js";
 import type { DynamicKeys, DynamicCascade } from "../segments/types/index.js";
+import type { TagRegistry } from "../types/tags.js";
+import { isTaggedValue } from "../types/tags.js";
 
 // ========================================================================
 // Default change predicate — mirrors React's Object.is-based equality.
-// Returns true when prev and next differ.
+// Returns true when prev and next differ. Used directly by cels that
+// declare a custom isChanged; the cycle's main path goes through
+// isCelChanged below, which adds tag-aware comparison.
 // ========================================================================
 
 export const defaultIsChanged: IsChanged = (a, b) => !Object.is(a, b);
+
+/** Tag-aware change check used by the cycle and input surface. Order:
+ *    1. Per-cel override (cel.isChanged).
+ *    2. Same-tag comparator from the tag registry, when both values
+ *       carry the same __tag.
+ *    3. Fallback to defaultIsChanged (Object.is).
+ *  Returns true when the values differ (i.e., propagation should fire). */
+export const isCelChanged = (
+  cel: Cel,
+  prev: unknown,
+  next: unknown,
+  tags: TagRegistry | undefined,
+): boolean => {
+  if (cel.isChanged) return cel.isChanged(prev, next);
+  if (tags && isTaggedValue(prev) && isTaggedValue(next) && prev.__tag === next.__tag) {
+    const proto = tags[prev.__tag];
+    if (proto?.comparator) {
+      return !proto.comparator(prev.value, next.value);
+    }
+  }
+  return defaultIsChanged(prev, next);
+};
+
+/** Free a tagged value's resources via the registered tag protocol.
+ *  Errors are swallowed so a misbehaving release can't crash the cycle.
+ *  Untagged values and tags without a release entry are no-ops. */
+export const releaseValue = (value: unknown, tags: TagRegistry | undefined): void => {
+  if (!tags) return;
+  if (!isTaggedValue(value)) return;
+  const proto = tags[value.__tag];
+  if (!proto?.release) return;
+  try { proto.release(value.value); } catch { /* swallow */ }
+};
 
 // ========================================================================
 // mergeCascades — union of two waved cascades, re-sorted by the cel's
