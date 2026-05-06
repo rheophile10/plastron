@@ -146,6 +146,26 @@ The Chinese-named facade (`龜卜藏`) borrows characters whose oldest forms com
 
 Project: <https://github.com/rheophile10/plastron>
 
+## The runtime, glyph by glyph
+
+| Glyph | Plastron concept | English name |
+|---|---|---|
+| 卜 | the cascade | `WavedCascade` — the propagating crack |
+| 辛 | the cycle-runner | `state.cycle` — carves new values onto the bone |
+| 貞 | the augur's hands | `state.input` — `get / set / batch / touch / consume` |
+| 骨 | the cels Map | `state.Cels` — every bone, by key |
+| 甲 | the substrate | `State` itself — what the cycle inscribes onto |
+| 卷 | a scroll | `SegmentBundle` — bound, signable, transmissible |
+| 印 | a seal | `SegmentManifest` — vermillion seal stamped onto a 卷 |
+| 印鑑 | seal-impression | `state.fingerprint()` — the runtime's identity |
+| 體 | script style | `LambdaKindHandler` — which scribe carves which kind of inscription |
+| 紋 | pattern / grain | `TagProtocol` — equality + lifecycle for opaque cel values |
+| 觀 | the observer | `HookSubscription` — watches but does not act |
+| 龜卜藏 | the archive | the runtime, viewed as a hoard of divinations |
+| 坑 / 窖 | the dugout | persistence — where flushed segments are deposited |
+
+Cels hold values or formulas. Writing a cel triggers a crack (the cascade) that the inscribing knife (the cycle-runner) walks in topological order, carving new values onto every downstream bone. The archive (`龜卜藏`) holds the whole rite. When the session ends, the bones are flushed into the dugout — and the augur opens a fresh shell for the next charge.
+
 ## Quick start
 
 ```ts
@@ -157,25 +177,60 @@ const rt = await runtime([{
   total: { segment: "demo", f: "*(@price, @qty)" },
 }]);
 
-console.log(rt.input!.get("total"));   // 300
+console.log(rt.input!.get("total"));     // 300
 await rt.input!.set("qty", 4);
-console.log(rt.input!.get("total"));   // 400
+console.log(rt.input!.get("total"));     // 400
 ```
 
-## Examples
+Plastron core is English-named. The plastromancy facade (`龜卜藏` with `察 / 刻 / 連刻 / 重 / 施 / 焚 / 增 / 增卷 / 觀 / 印鑑`) is a skin that lives in the showcase example, demonstrating that custom facades sit cleanly on top of the kernel:
+
+```ts
+import { 龜刻卜 } from "../examples/plastromancy/src/mask/index.js";
+
+const 甲 = await 龜刻卜([{
+  price: { segment: "demo", v: 100 },
+  qty:   { segment: "demo", v: 3 },
+  total: { segment: "demo", f: "*(@price, @qty)" },
+}]);
+
+console.log(甲.貞!.察("total"));     // 300  — read the omen
+await 甲.貞!.刻("qty", 4);            // carve a new charge
+console.log(甲.貞!.察("total"));     // 400  — the bone has spoken
+const 印 = await 甲.印鑑();           // seal-impression of the runtime
+```
+
+## The showcase ritual
+
+`examples/plastromancy/` is the marquee example — a Shang-era divination performed end-to-end through every plastron primitive, dressed in the 龜卜藏 facade that ships with the example. Bundle-shaped hydration with a temple-signed manifest (印); a custom **augur** lambda kind (體) that interprets a JSON rule book; **crack** values as format-tagged opaque types (紋) whose pattern-equality comparator suppresses spurious cascades; native chisels carving heat into geometry; the formula DSL composing the inscription; cycle observers (觀) recording every divination into an audit log; the runtime fingerprint (印鑑) printed at the close as the seal of the rite. Open the example to see every architectural choice in one running script.
 
 ```sh
-cd plastron && npm install
-npx vite-node ../examples/01_addition_chain/index.ts
+cd plastron && npm install && npm run build
+cd ../examples/plastromancy && npx tsx src/index.ts
 ```
 
-Each numbered directory under `examples/` is a runnable demo. The headline interactive one is `examples/09_excel_spa/` — a single-page Excel-style sheet running on plastron, with a cascade visualizer that animates each topological layer of recalculation:
+## Architecture, lightly
 
-```sh
-cd examples/09_excel_spa
-npm install
-npm run dev
-```
+Plastron core is small by design — a kernel that knows about cels, cycles, and a handful of extension points. Everything else lives as a segment or kind:
+
+- **Lambda kinds** — `formula`, `native`, and any opt-in extension (`quickjs`, `python`, `sqlite`, `eshkol`, …) plug in via `LambdaKindHandler`. Source travels with the lambda metadata; core stays language-agnostic.
+- **Hooks** — observation-only callbacks (`beforeCycle`, `afterLambdaInvoke`, `afterWave`, `afterCycle`, `afterHydrate`) let segments react to cycle activity without touching the cycle.
+- **Format-tagged values** — opaque cel values (`{__tag, value}`) carry a per-tag protocol with comparator, release, and serializer. Numpy arrays, sqlite blobs, Eshkol closures all round-trip through the cycle without core knowing what they are.
+- **Bundles + manifests** — segments are versioned, canonically-serialized JSON envelopes that may carry a content hash and Ed25519 signature. The runtime verifies on load via a pluggable `verifySegment` callback.
+- **Runtime fingerprint** — sha256 over engine version + kinds + hook subscribers + segments + tag protocols + trust policy. A deterministic identity for "this exact runtime configuration."
+
+Default segments — change-indices, error tracking — are auto-installed by `runtime()` / `plastron()` and replaceable. The `audit-log`, `plastron-schemas`, and `plastron-trust` segments live in `segments/`.
+
+## Anecdotal: what else can it do
+
+The plastromancy framing is the lens; it doesn't bound the use cases. Plastron has been sketched for analyst notebooks, agent harnesses where the agent's working memory is editable cels, news-stream monitoring with windowed transcripts, parliament-archive transcription pipelines, and recursive runtime-as-worker setups where one plastron document dispatches jobs to another. The examples above show exactly the substrate those use — different ritual, same shell.
+
+## Documentation
+
+- [`core-plan.md`](core-plan.md) — what belongs in core, what's been evicted, sequencing.
+- [`examples-roadmap.md`](examples-roadmap.md) — target deliverables and the segments each one needs.
+- [`pitches.md`](pitches.md) — single-sentence framings of what plastron is.
+- [`segments/`](segments/) — ecosystem segments (`audit-log`, `plastron-schemas`, `plastron-trust`).
+- [`examples/plastromancy/README.md`](examples/plastromancy/README.md) — the showcase ritual, walked through feature by feature.
 
 ## License
 
