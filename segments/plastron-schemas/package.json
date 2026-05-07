@@ -1,8 +1,0 @@
-{
-  "name": "plastron-schemas",
-  "private": true,
-  "type": "module",
-  "version": "0.0.1",
-  "description": "Schema-validation kind-handler wrapper for plastron. Enforces config_recalculation.strictTypes against config_schemas using zod.",
-  "main": "src/index.ts"
-}
