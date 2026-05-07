@@ -1,4 +1,4 @@
-import { zipSync, strToU8 } from "fflate";
+import { Archive } from "xit-wasm";
 import type { Segment } from "../../../plastron/src/types/index.js";
 import {
   ARCHIVE_FORMAT_VERSION, ARCHIVE_MIME,
@@ -12,6 +12,18 @@ export interface ExportOptions {
   /** JSON.stringify space arg. Defaults to 2 — pretty-print so the
    *  unzipped tree is human-readable. Pass 0 for compact JSON. */
   jsonIndent?: number;
+  /** Bytes of a previous `.甲` to extend with this export. When given,
+   *  the new export becomes the next commit on top of the previous
+   *  archive's history. Without it, a fresh repo is initialized.
+   *
+   *  Power users who want finer control over branching/merging can
+   *  open the archive directly via `Archive.open` instead. */
+  previous?: Uint8Array;
+  /** Commit message. Defaults to a timestamped marker. */
+  message?: string;
+  /** Author/committer string in `Name <email>` form. Defaults to
+   *  `"plastron <plastron@local>"`. */
+  author?: string;
 }
 
 // Reject keys that would produce confusing or unsafe filenames inside
@@ -31,10 +43,14 @@ const validateSegmentKey = (key: string): void => {
   }
 };
 
-export const exportArchive = (
+const enc = new TextEncoder();
+
+const segmentPath = (key: string): string => `${SEGMENTS_DIR}/${key}.json`;
+
+export const exportArchive = async (
   segments: Segment[],
   options: ExportOptions = {},
-): Uint8Array => {
+): Promise<Uint8Array> => {
   const indent = options.jsonIndent ?? 2;
   const createdAt = options.createdAt ?? new Date().toISOString();
 
@@ -57,12 +73,34 @@ export const exportArchive = (
   const stringify = (value: unknown): string =>
     JSON.stringify(value, null, indent) + "\n";
 
-  const files: Record<string, Uint8Array> = {
-    [MANIFEST_PATH]: strToU8(stringify(manifest)),
-  };
-  for (const seg of segments) {
-    files[`${SEGMENTS_DIR}/${seg.key}.json`] = strToU8(stringify(seg));
+  const archive = await Archive.open(options.previous);
+
+  // Manifest is rewritten on every export.
+  await archive.write(MANIFEST_PATH, enc.encode(stringify(manifest)));
+
+  // Drop segment files no longer present in this export, so the working
+  // tree matches what we're committing. Keep manifest + repo internals
+  // (Archive.list already filters internals).
+  const desiredPaths = new Set<string>([MANIFEST_PATH]);
+  for (const seg of segments) desiredPaths.add(segmentPath(seg.key));
+
+  const existing = await archive.list();
+  for (const path of existing) {
+    if (!desiredPaths.has(path)) {
+      await archive.remove(path);
+    }
   }
 
-  return zipSync(files);
+  for (const seg of segments) {
+    await archive.write(segmentPath(seg.key), enc.encode(stringify(seg)));
+  }
+
+  await archive.commit(
+    options.message ?? `export at ${createdAt}`,
+    options.author ? { author: options.author } : undefined,
+  );
+
+  const bytes = await archive.toBytes();
+  await archive.close();
+  return bytes;
 };

@@ -9,7 +9,8 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
-    "fflate": "^0.8.2"
+    "fflate": "^0.8.2",
+    "xit-wasm": "file:../../../xit-wasm-ts"
   },
   "devDependencies": {
     "typescript": "~5.9.3"
