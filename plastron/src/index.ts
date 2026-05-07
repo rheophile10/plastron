@@ -1,105 +1,46 @@
-import { createRuntime, hydrate, hydrateBundles } from "./state/index.js";
-import type { DehydratedCel, FnRegistry, HydrateOptions, State, SegmentBundle } from "./state/index.js";
-import type { LambdaMetadata } from "./lambdas/types/lambda.js";
-import type { Key } from "./common.js";
-import { installAllDefaults } from "./segments/defaults/index.js";
+import type { Cel, Key, State } from "./types/index.js";
+import { coreFns, coreFnMetadata } from "./core/index.js";
+import { PRECOMPUTED_STATES_KEY, type PrecomputedIndexes } from "./core/precompute.js";
 
 // ============================================================================
-// plastron / runtime — the top-level entry points.
+// createInitialState — return a fresh State with coreFns preinstalled,
+// the precomputedStates seed cel locked, and locked metadata seeded
+// for every core fn so subsequent hydrates can't overwrite them.
 //
-//   runtime(cels, lambdas, fnRegistry, options)
-//     The English-named, cels-and-lambdas hydration path. Returns a
-//     primed State with cycle + input attached and the default segments
-//     (changeIndices, errors) installed.
+// Calling convention: every kernel fn receives positional args. To run
+// hydrate or runCycle, pass `(state, …)`:
 //
-//   runtimeFromBundles(bundles, fnRegistry, options)
-//     The bundle-shaped variant. Each SegmentBundle carries its own
-//     cels, lambda metadata, aliases, segment metadata, and optional
-//     cryptographic manifest. options.verifySegment is consulted per
-//     bundle when a manifest is present.
-//
-//   plastron(...)
-//     Default export — alias for runtime(). Plastron core is English-
-//     named; the plastromancy 龜卜藏 facade lives in the showcase
-//     example (examples/plastromancy/src/mask/), demonstrating that
-//     custom facades sit cleanly on top of the kernel.
+//   const state = createInitialState();
+//   state.fns.get("hydrate")!(state, [mySeg], [myFns]);
+//   await state.fns.get("runCycle")!(state);
 // ============================================================================
 
-const helloWorldCels = (): Record<string, DehydratedCel> => {
-  const today = new Date().toISOString().slice(0, 10);
+const seedPrecomputedStatesCel = (): Cel => ({
+  key: PRECOMPUTED_STATES_KEY,
+  v: {
+    waveCascade: new Map(),
+    downstream: new Map(),
+    dynamicCascade: new Set(),
+  } satisfies PrecomputedIndexes,
+  segment: "core",
+  locked: true,
+});
+
+export const createInitialState = (): State => {
+  const cels = new Map<Key, Cel>();
+  const seed = seedPrecomputedStatesCel();
+  cels.set(seed.key, seed);
+
+  // coreFns and coreFnMetadata are shared across every state instance,
+  // so we clone — hydrate mutates state.fns / state.fnMetadata, and we
+  // don't want those mutations leaking into the canonical registry.
   return {
-    name:    { key: "name",    segment: "helloWorld", v: "World" },
-    date:    { key: "date",    segment: "helloWorld", v: today },
-    welcome: {
-      key: "welcome",
-      segment: "helloWorld",
-      f: "'hello ' |> concat(@name) |> concat(', welcome to plastron on ') |> concat(@date)",
-    },
+    cels,
+    fns:            new Map(coreFns),
+    fnMetadata:     new Map(coreFnMetadata),
+    schemas:        new Map(),
+    schemaMetadata: new Map(),
+    tagRegistry:    new Map(),
+    kindRegistry:   new Map(),
   };
 };
-
-export const runtime = async (
-  cels: Record<Key, DehydratedCel>[] = [helloWorldCels()],
-  lambdas: Record<Key, LambdaMetadata>[] = [],
-  fnRegistry: FnRegistry = {},
-  options?: HydrateOptions,
-): Promise<State> => {
-  const state = await hydrate(cels, lambdas, fnRegistry, undefined, options);
-  const rt = createRuntime(state);
-  if (options?.installDefaults !== false) {
-    await installAllDefaults(rt);
-  }
-  return rt;
-};
-
-export const runtimeFromBundles = async (
-  bundles: SegmentBundle[],
-  fnRegistry: FnRegistry = {},
-  options?: HydrateOptions,
-): Promise<State> => {
-  const state = await hydrateBundles(bundles, fnRegistry, undefined, options);
-  const rt = createRuntime(state);
-  if (options?.installDefaults !== false) {
-    await installAllDefaults(rt);
-  }
-  return rt;
-};
-
-const plastron = runtime;
-export default plastron;
-
-export { replaceCels } from "./state/index.js";
-export type {
-  LambdaKindHandler, KindContext, KindRegistry, CompiledLambda, DisposeFn,
-} from "./lambdas/types/kind.js";
-export type {
-  SegmentRole, SegmentMetadata, SegmentRegistry,
-} from "./state/segments/types/index.js";
-export type {
-  HookSubscription, HookName,
-  BeforeCycleEvent, AfterLambdaInvokeEvent, AfterWaveEvent,
-  AfterCycleEvent, AfterHydrateEvent,
-} from "./state/cycle/hooks.js";
-export type {
-  TaggedValue, TagProtocol, TagRegistry,
-} from "./state/types/tags.js";
-export {
-  TAG_FIELD, TAG_VALUE_FIELD, isTaggedValue, tagged,
-} from "./state/types/tags.js";
-export type {
-  SegmentBundle, SegmentManifest, SegmentCapabilities, VerificationResult,
-} from "./state/segments/types/index.js";
-export { BUNDLE_FORMAT_VERSION } from "./state/segments/types/index.js";
-export {
-  canonicalize, sha256Hex, bundleContentHash, validateBundleVersion,
-} from "./state/segments/serialization.js";
-export { nativeKind } from "./lambdas/kinds/native.js";
-export {
-  fingerprint, fingerprintComponents, ENGINE_VERSION,
-} from "./state/fingerprint.js";
-export type { FingerprintComponents } from "./state/fingerprint.js";
-export {
-  installChangeIndices, installErrors, installAllDefaults,
-  changeIndicesCels, changeIndicesHook, CHANGE_INDICES_SEGMENT,
-  errorsCels, errorsHook, ERRORS_SEGMENT,
-} from "./segments/defaults/index.js";

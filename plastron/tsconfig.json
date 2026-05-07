@@ -3,7 +3,6 @@
     "target": "ES2023",
     "module": "ESNext",
     "lib": ["ES2023"],
-    "types": ["node"],
     "moduleResolution": "bundler",
     "verbatimModuleSyntax": true,
     "moduleDetection": "force",
@@ -17,6 +16,5 @@
     "noFallthroughCasesInSwitch": true,
     "noUncheckedSideEffectImports": true
   },
-  "include": ["src"],
-  "exclude": ["test"]
+  "include": ["src"]
 }
