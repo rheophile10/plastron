@@ -3,6 +3,15 @@
   "private": true,
   "type": "module",
   "version": "0.0.1",
-  "description": "Read and write plastron documents to disk as `.甲` files — canonical-JSON archives carrying every segment, manifest, fingerprint, and dependency declaration in one self-contained artifact.",
-  "main": "src/index.ts"
+  "description": "Read and write plastron documents as zip-based `.甲` archives — like xlsx, but with JSON inside, so the unzipped tree is human-readable.",
+  "main": "src/index.ts",
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "fflate": "^0.8.2"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
 }

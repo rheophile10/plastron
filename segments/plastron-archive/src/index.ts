@@ -2,12 +2,13 @@ export { exportArchive } from "./export.js";
 export type { ExportOptions } from "./export.js";
 
 export { importArchive } from "./import.js";
-export type { ImportOptions } from "./import.js";
+export type { ImportResult } from "./import.js";
 
-export type {
-  ArchiveManifest, ArchiveBody, ArchiveRequires, ArchiveCreator,
-} from "./manifest.js";
+export type { ArchiveManifest } from "./manifest.js";
 export {
-  ARCHIVE_FORMAT_VERSION, ARCHIVE_MIME,
-  ARCHIVE_EXTENSIONS, CANONICAL_EXTENSION,
+  ARCHIVE_FORMAT_VERSION,
+  ARCHIVE_MIME,
+  CANONICAL_EXTENSION,
+  MANIFEST_PATH,
+  SEGMENTS_DIR,
 } from "./manifest.js";
