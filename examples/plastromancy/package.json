@@ -3,8 +3,16 @@
   "private": true,
   "type": "module",
   "version": "0.0.1",
-  "description": "Plastromancy showcase — every plastron feature in one Shang-era ritual.",
+  "description": "Plastromancy showcase — kernel features in a Shang-era ritual.",
   "scripts": {
-    "start": "tsx src/index.ts"
+    "start": "tsx src/index.ts",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "tsx": "^4.19.2",
+    "typescript": "~5.9.3"
   }
 }

@@ -1,211 +1,162 @@
 // ============================================================================
-// EXAMPLE — plastromancy: the showcase ritual.
+// EXAMPLE — plastromancy: divination on a simplified plastron.
 //
 // HOW TO RUN:
-//   cd plastron && npm run build
-//   npx tsx examples/plastromancy/src/index.ts
-//
-// This is the marquee demo. It exercises every plastron architectural
-// feature in one running script — and it does so through a 龜卜藏
-// facade that lives in this example, not in plastron core. Plastron
-// itself is English-named; the plastromancy mask is one possible skin
-// you can put on top of the kernel.
+//   cd examples/plastromancy && npm install && npm start
 //
 // FEATURES SHOWN (and the symbols that name them):
 //
-//   增卷         bundle-shaped hydration with manifest verification
-//   體 / augur   custom lambda kind interpreting a JSON rule book
-//   紋 / crack   format-tagged value with pattern-equality comparator
-//   印 / 卷       signed manifest on a sacred catalog
-//   印鑑         deterministic runtime fingerprint
-//   觀           hook subscription (audit log of every divination)
-//   formula DSL  preface and inscription auto-wire deps via @ refs
-//   imports      augur lambda imports the rule-book module cel
-//   provenance   authoredBy / generatedAt on charges and ancestors
-//   roles        code / schema / documentation / metadata / system
-//   defaults     changeIndices and errors auto-installed
-//   貞 / 焚 / 增  the augur's hands and the burn rite
+//   卷 (segments) bundle-shaped hydration, two segments at once
+//   體 (augur)    custom lambda kind that interprets a JSON rule book
+//   formula DSL   (/ heat thickness) auto-wires inputs from referenced cels
+//   schema-isChanged  crack pattern equality suppresses unrelated propagation
+//   schema-diff   vnode tree cel publishes a Patch on cel._diff per cycle
+//   .甲 archive   exportArchive / importArchive round-trip the state
+//   焚 (flush)    burn the session bones; rules survive
 //
 // THE RITUAL (terminology, after the README's glyph table):
 //   卜  the cascade   — a write triggers a crack that propagates
 //   辛  the chisel    — the cycle-runner carving omens onto the bone
-//   貞  the augur's   — IO surface: 察 (inspect), 刻 (carve), 連刻 (carve many)
+//   貞  the augur's   — IO surface: state.fns.get("get"|"set"|"batch")
 //   骨  the bones     — the cels Map
-//   甲  the shell     — the substrate
+//   甲  the shell     — the substrate (now also the archive format)
 // ============================================================================
 
-import { 龜刻卜 } from "./mask/index.js";
-import { fingerprintComponents } from "../../../plastron/src/index.js";
-import { sessionBundle } from "./bundles/session.js";
-import { rulesBundle } from "./bundles/rules.js";
-import { buildAncestorsBundle, trustedSigners } from "./bundles/ancestors.js";
-import { chiselFns } from "./lambdas/chisels.js";
-import { augurKind } from "./kinds/augur.js";
-import { crackTag } from "./tags/crack.js";
-import { installAuditLog, type AuditEvent } from "../../../segments/audit-log/src/index.js";
+import type { Dehydrate, Fn, State } from "../../../plastron/src/index.js";
+import { createInitialState } from "../../../plastron/src/index.js";
+import {
+  vnodeSchema, VNODE_SCHEMA_KEY, VNODE_IS_CHANGED_KEY, VNODE_DIFF_KEY,
+  type Patch,
+} from "../../../segments/plastron-dom/src/index.js";
+import {
+  exportArchive, importArchive,
+} from "../../../segments/plastron-archive/src/index.js";
+import { rulesSegment, sessionSegment } from "./segments.js";
+import { chiselFns } from "./lambdas.js";
+import { augurKind } from "./kind.js";
+import {
+  crackSchema, CRACK_SCHEMA_KEY, CRACK_IS_CHANGED_KEY, type Crack,
+} from "./schemas.js";
 
 const banner = (s: string) => `\n${s}\n${"─".repeat(s.length)}`;
+const get = (state: State, key: string) => state.cels.get(key)?.v;
+
+// Register schemas + their isChanged/diff metadata up front so hydrate
+// can resolve everything at hydrate time (it materializes _isChanged
+// and _diffFn on every cel that declares one of these schemas).
+const installShellEnvironment = (state: State): void => {
+  state.schemas.set(VNODE_SCHEMA_KEY, vnodeSchema);
+  state.schemaMetadata.set(VNODE_SCHEMA_KEY, {
+    key:       VNODE_SCHEMA_KEY,
+    isChanged: VNODE_IS_CHANGED_KEY,
+    diff:      VNODE_DIFF_KEY,
+  });
+  state.schemas.set(CRACK_SCHEMA_KEY, crackSchema);
+  state.schemaMetadata.set(CRACK_SCHEMA_KEY, {
+    key:       CRACK_SCHEMA_KEY,
+    isChanged: CRACK_IS_CHANGED_KEY,
+  });
+  state.kindRegistry.set("augur", augurKind);
+};
 
 // ============================================================================
-// Build the ancestors bundle. Its content hash is computed and the manifest
-// is stamped — the temple has signed the catalog (the 印 on the 卷).
+// Build the kettle.
 // ============================================================================
-const ancestorsBundle = await buildAncestorsBundle();
+const state = createInitialState();
+installShellEnvironment(state);
 
-console.log(banner("龜卜 — Plastromancy showcase"));
-console.log("Loading 卷 (bundles):");
-console.log(`  session    (role: code, 印: none)`);
-console.log(`  rules      (role: schema, 印: none)`);
-console.log(`  ancestors  (role: documentation, 印: signed by ${ancestorsBundle.manifest!.signerName})`);
+const hydrate   = state.fns.get("hydrate")   as Fn;
+const dehydrate = state.fns.get("dehydrate") as Dehydrate;
+const runCycle  = state.fns.get("runCycle")  as Fn;
+const set       = state.fns.get("set")       as Fn;
+const flush     = state.fns.get("flush")     as Fn;
 
-// ============================================================================
-// 龜刻卜.卷 — bundle-shaped hydrate. The verifier accepts ancestors based
-// on signer identity; an unrecognized seal would refuse the load.
-// ============================================================================
-const 甲 = await 龜刻卜.卷(
-  [sessionBundle, rulesBundle, ancestorsBundle],
-  chiselFns,
-  {
-    kinds: { augur: augurKind },
-    tags:  { crack: crackTag },
-    verifySegment: (bundle, manifest) => {
-      const signer = manifest.signerName ?? "(unsigned)";
-      const ok = trustedSigners.has(signer);
-      return {
-        ok,
-        verifier: "plastromancy-demo-verifier",
-        reason: ok ? "trusted temple seal" : `unknown signer: ${signer}`,
-      };
-    },
-  },
-);
+hydrate(state, [rulesSegment, sessionSegment], [chiselFns]);
+await runCycle(state);
 
-// 觀 — install the audit-log segment. Every divination is recorded.
-await installAuditLog(甲.__state);
-
-// 觀 — register an inline observer too. Demonstrates the 觀 method:
-// the augur's apprentice keeps a private tally of how many cycles fired.
-let cyclesObserved = 0;
-甲.觀({
-  id: "apprentice-tally",
-  afterCycle: (e) => { if (e.allChanges.length > 0) cyclesObserved++; },
-});
-
-// Configure change-indices to track every fired cel.
-await 甲.貞!.刻("changeIndexConfig", { all: [] });
+const showReading = (label: string): void => {
+  const charge = get(state, "charge") as string;
+  const crack  = get(state, "crack")  as Crack;
+  const omen   = get(state, "omen")   as string;
+  console.log(banner(label));
+  console.log(`  charge: ${charge}`);
+  console.log(`  crack:  ${crack.pattern} (intensity ${crack.intensity.toFixed(2)})`);
+  console.log(`  omen:   ${omen}`);
+};
 
 // ============================================================================
-// First reading. carveCrack fires from the seeded heat=6 / thickness=2;
-// pattern X; the augur reads "凶".
+// 第一次卜 — heat=6, thickness=2 → ratio 3 → pattern Y.
 // ============================================================================
-console.log(banner("第一次卜 — first divination"));
-console.log(甲.貞!.察("sessionReport"));
+showReading("第一次卜 — first divination");
+const firstDiff = state.cels.get("tree")?._diff as Patch | undefined;
+console.log(`  tree diff: ${firstDiff?.kind ?? "(none)"}`);
 
 // ============================================================================
-// 王 poses a graver charge. Provenance is stamped on the cel (authoredBy
-// / generatedAt). The cycle re-fires inscription; sessionReport updates.
+// 王 poses a graver charge. The cascade fires charge → tree, but not
+// crack / omen — their inputs didn't change.
 // ============================================================================
-console.log(banner("王 poses a graver charge"));
-await 甲.貞!.連刻([
-  ["charge", "王往伐羌方，受有祐？ (Shall the king campaign against the Qiāng?)"],
-  ["sessionLabel", "After the new charge is carved"],
-]);
-console.log(甲.貞!.察("sessionReport"));
+await set(state, "charge", "shall we burn the bones for rain?");
+showReading("王 poses a graver charge");
+const treeDiffAfter = state.cels.get("tree")?._diff as Patch | undefined;
+console.log(`  tree diff: ${treeDiffAfter?.kind ?? "(none)"}`);
 
 // ============================================================================
-// 連刻 — fresh plastron, firmer brand. heat=8, thickness=2 → ratio 4 → "double-Y".
-// One ritual stroke; one cycle.
+// 連刻 — heat eased. Pattern flips to X; omen and tree re-fire.
 // ============================================================================
-console.log(banner("連刻 — fresh plastron, firmer brand"));
-await 甲.貞!.連刻([
-  ["heat", 8],
-  ["thickness", 2],
-  ["sessionLabel", "After 連刻 (geometry shifts)"],
-]);
-console.log(甲.貞!.察("sessionReport"));
+await set(state, "heat", 4);
+showReading("連刻 — heat eased, pattern flips");
 
 // ============================================================================
-// 紋 comparator demo. Heat changes recompute the crack value, but when
-// the resulting tagged "crack" has the same pattern, the comparator
-// declares the new value equal and downstream cels (omen, inscription,
-// sessionReport) don't re-fire.
+// crack-isChanged demo: same pattern, different intensity. The schema
+// metadata's isChanged callback says "still pattern X, no change," so
+// downstream cels (omen, tree) skip re-firing.
 // ============================================================================
-console.log(banner("紋 comparator: same pattern, different intensity"));
-const before = 甲.貞!.察("crackGeometry") as { __tag: string; value: { pattern: string; intensity: number } };
-console.log(`  current crack: pattern=${before.value.pattern}, intensity=${before.value.intensity.toFixed(2)}`);
-
-const renderEventsBefore = (甲.骨.get("auditEvents")!.v as AuditEvent[])
-  .filter((e) => e.kind === "lambda" && (e.data as { key: string }).key === "sessionReport").length;
-
-await 甲.貞!.刻("heat", 9);  // ratio still 4.5 → still double-Y → comparator equal
-
-const after = 甲.貞!.察("crackGeometry") as { __tag: string; value: { pattern: string; intensity: number } };
-const renderEventsAfter = (甲.骨.get("auditEvents")!.v as AuditEvent[])
-  .filter((e) => e.kind === "lambda" && (e.data as { key: string }).key === "sessionReport").length;
-
-console.log(`  after heat=9:  pattern=${after.value.pattern}, intensity=${after.value.intensity.toFixed(2)}`);
-console.log(`  sessionReport re-renders: ${renderEventsAfter - renderEventsBefore} (without 紋 comparator: ≥1)`);
+const crackBefore = get(state, "crack") as Crack;
+const omenBefore  = get(state, "omen")  as string;
+await set(state, "heat", 5);  // ratio 2.5 — still pattern X
+const crackAfter  = get(state, "crack") as Crack;
+const omenAfter   = get(state, "omen")  as string;
+console.log(banner("schema-isChanged — same pattern, different intensity"));
+console.log(`  before: pattern ${crackBefore.pattern}, intensity ${crackBefore.intensity.toFixed(2)}`);
+console.log(`  after:  pattern ${crackAfter.pattern}, intensity ${crackAfter.intensity.toFixed(2)}`);
+console.log(`  omen ${omenBefore === omenAfter ? "unchanged" : "re-fired"} (isChanged suppressed propagation)`);
 
 // ============================================================================
-// Read the ancestors catalog — separate signed segment, untouched by all of
-// the above.
+// .甲 export — write the post-divination state to a zip archive that
+// carries its own JSON history. Any host can reload it.
 // ============================================================================
-console.log(banner("Ancestors catalog (signed segment)"));
-console.log(甲.貞!.察("ancestorReport"));
+console.log(banner(".甲 — archive the rite"));
+const segments = dehydrate(state);
+console.log(`  segments emitted: ${segments.map((s) => s.key).join(", ")}`);
+const bytes = await exportArchive(segments, { message: "plastromancy demo" });
+console.log(`  archive size: ${bytes.byteLength} bytes`);
 
 // ============================================================================
-// Devtools peek: the audit log. Every divination is recorded.
+// .甲 import — open the archive into a fresh state, verify it reads.
 // ============================================================================
-console.log(banner("Audit log — last 5 events"));
-const events = (甲.骨.get("auditEvents")!.v ?? []) as AuditEvent[];
-const recent = events.slice(-5);
-for (const e of recent) {
-  const data = JSON.stringify(e.data);
-  console.log(`  [${e.kind}] ${data.length > 80 ? data.slice(0, 77) + "…" : data}`);
+const { manifest, segments: imported, archive } = await importArchive(bytes);
+await archive.close();
+console.log(`  archive segments: [${manifest.segments.join(", ")}]`);
+
+const restored = createInitialState();
+installShellEnvironment(restored);
+const restoredHydrate  = restored.fns.get("hydrate")  as Fn;
+const restoredRunCycle = restored.fns.get("runCycle") as Fn;
+restoredHydrate(restored, imported, [chiselFns]);
+await restoredRunCycle(restored);
+console.log(`  restored omen: ${get(restored, "omen")}`);
+
+// ============================================================================
+// 焚 — burn the session bones. flush walks every cel with segment
+// "session", fires each cel._dispose, calls tag.release on cel.v, and
+// re-precomputes. Rules and the augur-kind metadata survive.
+// ============================================================================
+flush(state, "session");
+const remaining = new Set<string>();
+for (const cel of state.cels.values()) {
+  if (cel.segment) remaining.add(cel.segment);
 }
-
-console.log(`\n  apprentice tally (inline 觀): ${cyclesObserved} non-empty cycles fired`);
-
-// ============================================================================
-// Devtools peek: the change-indices default segment.
-// ============================================================================
-console.log(banner("Change-indices snapshot (post-cycle)"));
-const ci = 甲.骨.get("changeIndices")!.v;
-console.log(JSON.stringify(ci, null, 2));
-
-// ============================================================================
-// 印鑑 — the seal of this rite. A deterministic identifier over engine
-// version + 體 (kinds) + 觀 (hook subscribers) + segments + 紋 (tags).
-// ============================================================================
-console.log(banner("印鑑 — the seal of this rite"));
-const 印 = await 甲.印鑑();
-const components = 甲.印鑑分解();
-console.log(`  印鑑:      ${印.slice(0, 32)}…`);
-console.log(`  engine:    ${components.engineVersion}`);
-console.log(`  體 (kinds):  [${components.kinds.join(", ")}]`);
-console.log(`  觀 (hooks):  [${components.hooks.join(", ")}]`);
-console.log(`  segments:  [${components.segments.map((s) => `${s.key}(${s.role ?? "?"})`).join(", ")}]`);
-console.log(`  紋 (tags):   [${components.tags.join(", ")}]`);
-
-// Sanity check — expose engine identity through the more general API too.
-const fpComponents = fingerprintComponents(甲.__state);
-console.log(`  via __state.fingerprintComponents: kinds=[${fpComponents.kinds.join(", ")}]`);
-
-// ============================================================================
-// 焚 — burn the session plastron's bones; release tagged values via the
-// crack tag's release hook. Ancestors and rules survive.
-// ============================================================================
-console.log(banner("焚 — burn the session plastron"));
-甲.焚("session");
-const remainingSegments = new Set(
-  Array.from(甲.骨.values()).map((c) => c.segment).filter(Boolean),
-);
-console.log(`  segments still loaded: ${[...remainingSegments].sort().join(", ")}`);
-
-// ============================================================================
-// The ancestors scroll still renders.
-// ============================================================================
-console.log(banner("Ancestors after 焚"));
-console.log(甲.貞!.察("ancestorReport"));
+console.log(banner("焚 — burn the session"));
+console.log(`  segments remaining: ${[...remaining].sort().join(", ") || "(none)"}`);
 
 console.log("\n龜卜 complete.\n");
