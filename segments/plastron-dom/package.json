@@ -1,0 +1,17 @@
+{
+  "name": "plastron-dom",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "DOM rendering segment for plastron — vnodeSchema-driven change detection, vnode builders, JSON-shape Patch ops as a graph-resident cel, and an rAF-batched painter that diffs attrs / style / events / children between cycles.",
+  "main": "src/index.ts",
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}

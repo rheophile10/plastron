@@ -1,5 +1,5 @@
 import { Archive } from "xit-wasm";
-import type { Segment } from "../../../plastron/src/types/index.js";
+import type { Segment } from "../../../plastron/src/index.js";
 import {
   MANIFEST_PATH, SEGMENTS_DIR,
   type ArchiveManifest,
