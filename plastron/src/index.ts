@@ -44,3 +44,5 @@ export const createInitialState = (): State => {
     kindRegistry:   new Map(),
   };
 };
+
+export type * from "./types/index.js";
