@@ -1,6 +1,5 @@
 {
-  "name": "plastron-simplified",
-  "private": true,
+  "name": "plastron",
   "version": "0.0.0",
   "type": "module",
   "exports": {
