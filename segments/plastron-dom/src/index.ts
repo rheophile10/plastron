@@ -1,8 +1,8 @@
 import type {
   Cel, DehydratedCel, Fn, LambdaKey, State,
 } from "../../../plastron/src/index.js";
-import { createPainter, type DomRoot, type PainterRoot, type Painter } from "./paint.js";
-import { diffVNodes, isNoop } from "./diff.js";
+import { createDomChannel, type DomRoot, type PainterRoot, type DomChannelHandle } from "./paint.js";
+import { diffVNodes } from "./diff.js";
 import {
   vnodeEquals, vnodeSchema,
   VNODE_SCHEMA_KEY, VNODE_IS_CHANGED_KEY, VNODE_DIFF_KEY,
@@ -14,20 +14,22 @@ import {
 //
 // Pipeline (per root):
 //
-//   <user tree cel> ──→ __plastronDom:patch:<rootKey> ──→ painter (rAF)
-//        wave 0                wave 1
+//   <user tree cel> ──→ __plastronDom:patch:<rootKey> ──→ dom channel (rAF)
+//        wave 0                wave 1                       state.channelRegistry
 //
 //   The patch cel is graph-resident: its `v` is a Patch (JSON-shape,
-//   inspectable, snapshottable). Its lambda also schedules an rAF on
-//   the painter side as a side effect — combined to avoid an extra cel
-//   per root.
+//   inspectable, snapshottable). Its lambda is pure — it computes the
+//   diff against `lastApplied` and returns it. The kernel routes the
+//   changed cel onto the dom channel via cel.channel; the channel
+//   schedules an rAF and applies on flush.
 //
 //   The patch fn's closure holds a `lastApplied: VNode | null` reference
-//   shared with the painter. Each cycle's diff is computed against
-//   lastApplied, NOT against the previously-rendered tree — that way,
-//   if multiple cycles run between rAFs, each successive patch
-//   supersedes the previous one. The painter's onApplied callback
-//   advances lastApplied to whatever it just committed to the DOM.
+//   shared with the channel via the per-root onApplied callback. Each
+//   cycle's diff is computed against lastApplied, NOT against the
+//   previously-rendered tree — that way, if multiple cycles run between
+//   rAFs, each successive patch supersedes the previous one. The
+//   channel's onApplied callback advances lastApplied to whatever it
+//   just committed to the DOM.
 //
 // Tree cels declare `schema: vnodeSchema` (exported from this module).
 // installDom registers the schema's isChanged + diff fns; hydrate's
@@ -36,12 +38,13 @@ import {
 // detection lives where it belongs (on the schema).
 //
 // Teardown is `flush(PLASTRON_DOM_SEGMENT)`: the painter sentinel cel
-// has a `_dispose` closure that cancels rAF, detaches listeners, and
-// clears mounted state. flush walks every cel with the segment marker,
-// fires its _dispose, removes it. No JS-level uninstall method.
+// has a `_dispose` closure that calls channel.dispose() (cancels rAF,
+// detaches listeners, clears mounted state) and removes the channel
+// entry from state.channelRegistry.
 // ========================================================================
 
 export const PLASTRON_DOM_SEGMENT = "plastronDom" as const;
+export const DEFAULT_DOM_CHANNEL_KEY = "plastronDom" as const;
 
 export type {
   VNode, VText, VElement, AttrValue, EventBinding, EventInfo,
@@ -52,22 +55,27 @@ export {
 } from "./vnode.js";
 export type { Patch, PatchEl, PatchInit, PatchReplace, PatchText, PatchNoop, ChildPatch } from "./diff.js";
 export { diffVNodes, isNoop } from "./diff.js";
-export type { DomRoot, Painter } from "./paint.js";
-export { createPainter } from "./paint.js";
+export type { DomRoot, DomChannelHandle } from "./paint.js";
+export { createDomChannel } from "./paint.js";
 
 export interface InstallDomOptions {
   /** Map from a stable root key (your choice) to mount target + tree cel. */
   roots: Record<string, { selector?: string; element?: Element; cel: string }>;
+  /** Channel key under which to register this painter in
+   *  state.channelRegistry. Default 'plastronDom'. Pass distinct keys
+   *  if installing multiple painters in the same state. */
+  channelKey?: string;
 }
 
 export interface DomHandle {
-  painter: Painter;
+  channel: DomChannelHandle;
   /** Patch cel keys, one per root. Useful for devtools / snapshot
    *  tooling that wants to inspect "what's about to be applied." */
   patchCels: Record<string, string>;
 }
 
-const PAINTER_CEL_KEY = "__plastronDom:painter" as const;
+const painterCelKey = (channelKey: string): string =>
+  `__plastronDom:painter:${channelKey}`;
 const patchCelKey = (rk: string): string => `__plastronDom:patch:${rk}`;
 const patchFnKey  = (rk: string): string => `__plastronDom:patchFn:${rk}`;
 
@@ -75,7 +83,12 @@ const patchFnKey  = (rk: string): string => `__plastronDom:patchFn:${rk}`;
  *  must already be hydrated and must declare `schema: vnodeSchema`.
  *  installDom registers the schema's isChanged + diff fns (the
  *  kernel's auto-wire then attaches them to every matching tree cel),
- *  builds one patch cel per root, and creates the painter.
+ *  builds one patch cel per root, registers a single rAF-batched
+ *  channel under options.channelKey (default 'plastronDom'), and
+ *  binds each patch cel to that channel.
+ *
+ *  First paint happens whenever the host's first cascade fires the
+ *  patch cels — call `runCycle` or `set` on a tree cel to kick it.
  *
  *  Teardown: call `state.fns.get("flush")(state, PLASTRON_DOM_SEGMENT)`. */
 export const installDom = (
@@ -83,6 +96,15 @@ export const installDom = (
   options: InstallDomOptions,
 ): DomHandle => {
   const sourceRoots = options.roots;
+  const channelKey = options.channelKey ?? DEFAULT_DOM_CHANNEL_KEY;
+
+  if (state.channelRegistry.has(channelKey)) {
+    throw new Error(
+      `installDom: channel "${channelKey}" already registered. ` +
+      `Pass options.channelKey to namespace.`,
+    );
+  }
+
   for (const [rootKey, root] of Object.entries(sourceRoots)) {
     if (!state.cels.has(root.cel)) {
       throw new Error(
@@ -114,11 +136,15 @@ export const installDom = (
     cel.schema = vnodeSchema;
   }
 
-  // Painter is created up front so the per-root patch fns can capture it.
+  // Build painter roots up front so the channel can resolve cel.key →
+  // rootKey at enqueue time. onApplied still closes over each root's
+  // `slot.lastApplied` so the patch fn keeps producing diffs against
+  // what's actually on screen.
   const painterRoots: Record<string, PainterRoot> = {};
-  const painter = createPainter(state, painterRoots);
+  const slots: Record<string, { lastApplied: VNode | null }> = {};
 
-  // Per-root closures + the patch fn that uses them.
+  // Patch fns + schema fns. Patch fn is now PURE — kernel routes the
+  // resulting Patch through the dom channel via cel.channel.
   const patchFns = new Map<LambdaKey, Fn>([
     [VNODE_IS_CHANGED_KEY, (prev: unknown, next: unknown) =>
       !vnodeEquals(prev as VNode, next as VNode)],
@@ -129,25 +155,22 @@ export const installDom = (
   const patchCelByRoot: Record<string, string> = {};
 
   for (const [rootKey, root] of Object.entries(sourceRoots)) {
-    // Closure shared between the diff fn and the painter:
-    //   lastApplied — what's currently in the DOM (or null pre-mount).
     const slot: { lastApplied: VNode | null } = { lastApplied: null };
+    slots[rootKey] = slot;
 
     const fnKey = patchFnKey(rootKey);
     const cKey = patchCelKey(rootKey);
     patchCelByRoot[rootKey] = cKey;
 
-    patchFns.set(fnKey, ({ tree }: { tree: VNode }) => {
-      const patch = diffVNodes(slot.lastApplied, tree);
-      if (!isNoop(patch)) painter.schedule(rootKey);
-      return patch;
-    });
+    patchFns.set(fnKey, ({ tree }: { tree: VNode }) =>
+      diffVNodes(slot.lastApplied, tree));
 
     patchCels.push({
       key: cKey,
       segment: PLASTRON_DOM_SEGMENT,
       l: fnKey,
       inputMap: { tree: root.cel },
+      channel: channelKey,
     });
 
     const dr: DomRoot = { patchCel: cKey };
@@ -164,22 +187,26 @@ export const installDom = (
     };
   }
 
+  const channel = createDomChannel(state, painterRoots);
+  state.channelRegistry.set(channelKey, channel);
+
   const hydrate = state.fns.get("hydrate") as Fn;
   hydrate(state, [{ key: PLASTRON_DOM_SEGMENT, cels: patchCels }], [patchFns]);
 
   // Painter sentinel cel — `flush(PLASTRON_DOM_SEGMENT)` walks cels,
-  // fires _dispose, removes them. The painter is captured by closure;
-  // cel.v stays null so the cel round-trips cleanly through dehydrate.
+  // fires _dispose, removes them. The dispose hook tears down the
+  // channel (cancels rAF, detaches listeners) and unregisters it from
+  // state.channelRegistry.
   const painterCel: Cel = {
-    key: PAINTER_CEL_KEY,
+    key: painterCelKey(channelKey),
     v: null,
     segment: PLASTRON_DOM_SEGMENT,
-    _dispose: () => painter.dispose(),
+    _dispose: () => {
+      channel.dispose();
+      state.channelRegistry.delete(channelKey);
+    },
   };
-  state.cels.set(PAINTER_CEL_KEY, painterCel);
+  state.cels.set(painterCel.key, painterCel);
 
-  // Initial paint — every root mounts on the next rAF.
-  painter.scheduleAll();
-
-  return { painter, patchCels: patchCelByRoot };
+  return { channel, patchCels: patchCelByRoot };
 };

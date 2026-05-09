@@ -1,24 +1,31 @@
-import type { Fn, State } from "../../../plastron/src/index.js";
+import type {
+  ChannelEnqueue, ChannelHandler, Fn, State,
+} from "../../../plastron/src/index.js";
 import { applyPatch, detachAllListeners, type ListenerRegistry } from "./apply.js";
-import type { Patch } from "./diff.js";
+import { isNoop, type Patch } from "./diff.js";
 
 // ========================================================================
-// Painter — rAF-batched dispatcher.
+// DOM channel — rAF-batched ChannelHandler.
 //
-// The painter no longer computes diffs. It owns three pieces of state:
+// The channel owns three pieces of state:
 //
 //   • dirty       : Set<rootKey>  — roots scheduled to paint this rAF
 //   • mounted     : Map<rootKey, Node | null> — current root child node
 //   • listeners   : WeakMap<Element, Map<eventType, AttachedListener>>
 //
-// At rAF flush, for each dirty root, the painter:
-//   1. Reads `state.cels.get(patchCelKey).v` — a Patch produced by the
-//      patch cel during runCascade.
-//   2. Calls applyPatch(target, mounted, patch, listeners, state, setFn).
-//   3. Notifies the per-root `onApplied` callback so the patch fn's
-//      closure can advance its `lastApplied` reference. This is what
-//      keeps the next cycle's diff against the actual DOM state, not
-//      against whatever was last seen in the cel.
+// kernel ──enqueue({cel,state})──► channel
+//   • derive rootKey from cel.key (patchCelToRoot lookup)
+//   • read cel.v as Patch; skip if noop
+//   • mark rootKey dirty; queue rAF if not already pending
+//
+// rAF (or drain) ──► flush()
+//   • for each dirty root: read patch from cel.v, applyPatch to DOM,
+//     advance lastApplied via root.onApplied, clear dirty set
+//
+// Off-browser, the channel still advances per-root state (mounted node
+// remains null, lastApplied moves forward via onApplied) so the patch
+// cel produces incremental diffs in tests / SSR. The DOM mutation step
+// is the only browser-gated piece.
 // ========================================================================
 
 export interface DomRoot {
@@ -27,7 +34,7 @@ export interface DomRoot {
   selector?: string;
   /** Pre-resolved mount target. Wins over `selector`. */
   element?: Element;
-  /** Cel key whose value (a Patch) the painter applies. */
+  /** Cel key whose value (a Patch) the channel applies. */
   patchCel: string;
 }
 
@@ -37,14 +44,10 @@ export interface PainterRoot extends DomRoot {
   onApplied: (patch: Patch) => void;
 }
 
-export interface Painter {
-  schedule: (rootKey: string) => void;
-  scheduleAll: () => void;
-  /** Force-resolve any pending rAF synchronously. Useful in tests. */
-  flushNow: () => void;
-  /** Tear down all listeners and clear mounted state. Idempotent. */
-  dispose: () => void;
-}
+/** Channel-handler shape for plastron-dom. Identical to ChannelHandler
+ *  today; the alias exists so future dom-specific additions land in
+ *  one named type. */
+export type DomChannelHandle = ChannelHandler;
 
 const isBrowser =
   typeof globalThis !== "undefined" &&
@@ -61,10 +64,10 @@ const cancelRaf =
     ? cancelAnimationFrame.bind(globalThis)
     : (id: number) => clearTimeout(id as unknown as ReturnType<typeof setTimeout>);
 
-export const createPainter = (
+export const createDomChannel = (
   state: State,
   roots: Record<string, PainterRoot>,
-): Painter => {
+): DomChannelHandle => {
   const dirty = new Set<string>();
   const mounted = new Map<string, Node | null>();
   const listeners: ListenerRegistry = new WeakMap();
@@ -72,13 +75,16 @@ export const createPainter = (
   let rafId: number | null = null;
   let disposed = false;
 
+  // Reverse lookup: patch cel key → root key. The kernel hands us a Cel
+  // via enqueue; we need its root to schedule + flush correctly.
+  const patchCelToRoot = new Map<string, string>();
+  for (const [rootKey, root] of Object.entries(roots)) {
+    patchCelToRoot.set(root.patchCel, rootKey);
+  }
+
   const flush = (): void => {
     rafId = null;
     if (disposed) return;
-    // Off-browser, the painter still advances per-root state (mounted
-    // node remains null, lastApplied moves forward) so the patch cel
-    // produces incremental diffs in tests / SSR. The DOM mutation step
-    // is the only browser-gated piece.
     for (const rootKey of dirty) {
       const root = roots[rootKey];
       if (!root) continue;
@@ -102,14 +108,23 @@ export const createPainter = (
     rafId = raf(flush);
   };
 
-  const scheduleAll = (): void => {
-    if (disposed) return;
-    for (const k of Object.keys(roots)) dirty.add(k);
-    if (rafId !== null) return;
-    rafId = raf(flush);
+  // ── ChannelHandler surface ───────────────────────────────────────────
+
+  const enqueue = ({ cel }: ChannelEnqueue): void => {
+    const rootKey = patchCelToRoot.get(cel.key);
+    if (rootKey === undefined) return;
+    // Skip noop patches — the optimization the patch fn body used to
+    // do inline. cel.v is the Patch produced by the patch lambda; if
+    // the diff was a noop, no rAF is needed.
+    const v = cel.v;
+    if (!v || typeof v !== "object" || !("kind" in (v as object))) return;
+    if (isNoop(v as Patch)) return;
+    schedule(rootKey);
   };
 
-  const flushNow = (): void => {
+  const hasPending = (): boolean => dirty.size > 0;
+
+  const drain = (): void => {
     if (rafId !== null) {
       cancelRaf(rafId);
       rafId = null;
@@ -130,7 +145,7 @@ export const createPainter = (
     mounted.clear();
   };
 
-  return { schedule, scheduleAll, flushNow, dispose };
+  return { enqueue, hasPending, drain, dispose };
 };
 
 const readPatch = (state: State, celKey: string): Patch | undefined => {

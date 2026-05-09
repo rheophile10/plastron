@@ -57,7 +57,7 @@ const handle = installDom(state, {
 
 // Force the first paint synchronously instead of waiting for the next
 // rAF — a lot more pleasant during dev refreshes.
-handle.painter.flushNow();
+handle.channel.drain();
 
 // Devtools handle.
 (globalThis as { __plastromancy?: unknown }).__plastromancy = state;

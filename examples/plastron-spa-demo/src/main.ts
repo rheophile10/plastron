@@ -60,7 +60,7 @@ const handle = installDom(state, {
 });
 
 await runCycle(state);
-handle.painter.flushNow();
+handle.channel.drain();
 
 console.log("[plastron-spa-demo] mounted");
 (globalThis as { __plastronState?: unknown }).__plastronState = state;

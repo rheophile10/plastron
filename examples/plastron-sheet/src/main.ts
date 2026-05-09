@@ -37,7 +37,7 @@ const handle = installDom(state, {
   roots: { app: { selector: "#root", cel: "appTree" } },
 });
 await runCycle(state);
-handle.painter.flushNow();
+handle.channel.drain();
 
 document.addEventListener("mouseup", stopDragging);
 installKeyboardBridge(state);
