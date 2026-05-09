@@ -1,10 +1,10 @@
 // ========================================================================
 // Archive manifest — top-level metadata for a `.甲` file.
 //
-// `.甲` is a zip container holding one `manifest.json` at the root and
-// one JSON file per Segment under `segments/`. Files are pretty-printed
-// so unzipping the archive yields a directory you can read, edit, and
-// re-zip with any tool — the xlsx model, but with JSON instead of XML.
+// `.甲` is a zip wrapping a xit repository: the working tree holds one
+// `manifest.json` at the root and one JSON file per Segment under
+// `segments/`, alongside xit's `.xit/` repo internals. Each export is a
+// commit, so the archive carries its full history without an outer VCS.
 // ========================================================================
 
 export const ARCHIVE_FORMAT_VERSION = 1 as const;
