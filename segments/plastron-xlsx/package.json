@@ -1,0 +1,17 @@
+{
+  "name": "plastron-xlsx",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Minimal-dep XLSX (SpreadsheetML) parser segment for plastron — unzips with fflate, parses XML with the browser DOMParser, returns rows as plain JS values.",
+  "main": "src/index.ts",
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "fflate": "^0.8.2"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}
