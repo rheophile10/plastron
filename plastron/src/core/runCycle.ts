@@ -2,15 +2,15 @@ import type { Cel, Fn, Key, State } from "../types/index.js";
 import { PRECOMPUTED_STATES_KEY, type PrecomputedIndexes } from "./precompute.js";
 import { releaseValue } from "./hydrate.js";
 
-// If `v` is a Promise, await it; otherwise return it directly. Lets a
-// fully-sync cascade run without microtask yields, while still tolerating
-// async fns transparently.
-const settle = async <T,>(v: T | Promise<T>): Promise<T> =>
-  v instanceof Promise ? await v : v;
-
 // Route a changed cel onto every channel listed in cel.channel. Channel
 // reads cel.v / cel._diff itself — kernel doesn't pre-decide which one
 // matters. No-op if no channel binding or no handler registered.
+//
+// NOTE on concurrency: cels in the same wave-level fire in parallel,
+// so multiple cels may enqueue onto the same channel within one
+// microtask. Channel handlers must keep enqueue re-entrant — typically
+// just a Set add or queue push. The current DOM/log/persist designs
+// satisfy this trivially.
 const enqueueChannels = (cel: Cel, state: State): void => {
   if (!cel.channel) return;
   const keys = Array.isArray(cel.channel) ? cel.channel : [cel.channel];
@@ -38,6 +38,19 @@ const enqueueChannels = (cel: Cel, state: State): void => {
 //     This skips both the lambda body and downstream propagation when
 //     nothing meaningfully changed.
 //
+// Three nested loops in runCascade:
+//
+//   for each wave (sequential, user-declared)
+//     for each level within wave (sequential, Kahn-derived)
+//       for each cel in level — fired concurrently. Sync cels complete
+//         inline; async cels return Promises that we Promise.all at
+//         the end of the level.
+//
+// Sync graphs pay no parallelism overhead: fireCel returns void when
+// every operation is sync, the level loop never builds a promise array,
+// and the level barrier is a single `if` check. Async cels in the same
+// level interleave at await points naturally.
+//
 // Only `runCycle` is registered in coreFns. The helpers are exported
 // for direct file imports inside core/, but are NOT re-exported by
 // core/index.ts — they're internal to the kernel.
@@ -45,6 +58,127 @@ const enqueueChannels = (cel: Cel, state: State): void => {
 
 const readIndexes = (state: State): PrecomputedIndexes | undefined =>
   state.cels.get(PRECOMPUTED_STATES_KEY)?.v as PrecomputedIndexes | undefined;
+
+// Fire a single cel: suppression check, build inputs, invoke fn, run
+// _isChanged + _diffFn, write cel.v, route to channels. Returns void
+// when the entire flow stays synchronous (the common case for sheets +
+// pure compute graphs); returns Promise<void> as soon as the fn body,
+// _isChanged, or _diffFn yields. Callers either `Promise.all` the
+// returned Promises or ignore void returns.
+const fireCel = (
+  state: State,
+  key: Key,
+  suppression: boolean,
+  changed: Set<Key> | undefined,
+): void | Promise<void> => {
+  const cel = state.cels.get(key);
+  if (!cel || !cel.l) return;
+  // Per-cel compiled fn (e.g. formula cels) wins over the shared
+  // registry lookup — same pattern as cel._isChanged.
+  const fn = cel._fn ?? state.fns.get(cel.l);
+  if (!fn) return;
+
+  // Suppression mode: skip the lambda when no input changed
+  // (dynamic cels always fire — their source is external).
+  if (suppression) {
+    let shouldFire = cel.dynamic === true;
+    if (!shouldFire && cel.inputMap) {
+      outer: for (const ref of Object.values(cel.inputMap)) {
+        const refs = Array.isArray(ref) ? ref : [ref];
+        for (const k of refs) {
+          if (changed!.has(k)) { shouldFire = true; break outer; }
+        }
+      }
+    }
+    if (!shouldFire) return;
+  }
+
+  const inputs: Record<string, unknown> = {};
+  if (cel.inputMap) {
+    for (const [name, ref] of Object.entries(cel.inputMap)) {
+      inputs[name] = Array.isArray(ref)
+        ? ref.map((k) => state.cels.get(k)?.v)
+        : state.cels.get(ref)?.v;
+    }
+  }
+
+  const fnResult = fn(inputs);
+  if (fnResult instanceof Promise) {
+    return fnResult.then((newV) => finishFire(state, cel, newV, suppression, changed));
+  }
+  return finishFireSync(state, cel, fnResult, suppression, changed);
+};
+
+// Continues fireCel after the fn result is known. Returns void if
+// _isChanged / _diffFn are sync; Promise<void> if either yields.
+const finishFireSync = (
+  state: State, cel: Cel, newV: unknown,
+  suppression: boolean, changed: Set<Key> | undefined,
+): void | Promise<void> => {
+  if (!suppression) {
+    cel.v = newV;
+    // Full-mode cascade (boot from scratch) still routes to channels —
+    // host code may want a "paint everything" pass at startup.
+    enqueueChannels(cel, state);
+    return;
+  }
+
+  // Output diff: cel.v IS the previous value until we overwrite it.
+  // Compare in place — no separate _lastV slot needed.
+  // _isChanged is materialized at hydrate from the cel's schema's
+  // SchemaMetadata.isChanged. Falsy _isChanged means reference equality.
+  if (cel._isChanged) {
+    const r = cel._isChanged(cel.v, newV);
+    if (r instanceof Promise) {
+      return r.then((isCh) => {
+        if (!isCh) return;
+        return commitChange(state, cel, newV, changed!);
+      });
+    }
+    if (!r) return;
+  } else if (cel.v === newV) {
+    return;
+  }
+  return commitChange(state, cel, newV, changed!);
+};
+
+// Async wrapper used after the fn body itself yielded a Promise. The
+// post-fn logic is identical to the sync path; this just guarantees a
+// Promise return so callers can chain off it cleanly.
+const finishFire = async (
+  state: State, cel: Cel, newV: unknown,
+  suppression: boolean, changed: Set<Key> | undefined,
+): Promise<void> => {
+  const r = finishFireSync(state, cel, newV, suppression, changed);
+  if (r instanceof Promise) await r;
+};
+
+// Apply the change: run _diffFn (if any), release the prior value,
+// install newV, mark `changed`, route to channels. Returns Promise
+// only when _diffFn is async.
+const commitChange = (
+  state: State, cel: Cel, newV: unknown, changed: Set<Key>,
+): void | Promise<void> => {
+  if (cel._diffFn) {
+    const d = cel._diffFn(cel.v, newV);
+    if (d instanceof Promise) {
+      return d.then((diff) => {
+        cel._diff = diff;
+        releaseValue(cel.v, cel.tag, state.tagRegistry);
+        cel.v = newV;
+        changed.add(cel.key);
+        // Route to channels AFTER cel.v / cel._diff are settled so the
+        // channel sees consistent state when it reads them.
+        enqueueChannels(cel, state);
+      });
+    }
+    cel._diff = d;
+  }
+  releaseValue(cel.v, cel.tag, state.tagRegistry);
+  cel.v = newV;
+  changed.add(cel.key);
+  enqueueChannels(cel, state);
+};
 
 export const runCascade = async (
   state: State,
@@ -54,78 +188,25 @@ export const runCascade = async (
   const indexes = readIndexes(state);
   if (!indexes || affected.size === 0) return;
 
-  const cels = state.cels;
-  const fns = state.fns;
   const suppression = changed !== undefined;
   const waves = [...indexes.waveCascade.keys()].sort((a, b) => a - b);
 
   for (const wave of waves) {
-    for (const key of indexes.waveCascade.get(wave)!) {
-      if (!affected.has(key)) continue;
-      const cel = cels.get(key);
-      if (!cel || !cel.l) continue;
-      // Per-cel compiled fn (e.g. formula cels) wins over the shared
-      // registry lookup — same pattern as cel._isChanged.
-      const fn = cel._fn ?? fns.get(cel.l);
-      if (!fn) continue;
-
-      // Suppression mode: skip the lambda when no input changed
-      // (dynamic cels always fire — their source is external).
-      if (suppression) {
-        let shouldFire = cel.dynamic === true;
-        if (!shouldFire && cel.inputMap) {
-          for (const ref of Object.values(cel.inputMap)) {
-            const refs = Array.isArray(ref) ? ref : [ref];
-            for (const k of refs) {
-              if (changed!.has(k)) { shouldFire = true; break; }
-            }
-            if (shouldFire) break;
-          }
-        }
-        if (!shouldFire) continue;
-      }
-
-      const inputs: Record<string, unknown> = {};
-      if (cel.inputMap) {
-        for (const [name, ref] of Object.entries(cel.inputMap)) {
-          inputs[name] = Array.isArray(ref)
-            ? ref.map((k) => cels.get(k)?.v)
-            : cels.get(ref)?.v;
+    const levels = indexes.waveCascade.get(wave)!;
+    for (const level of levels) {
+      // Fire every affected cel in this level. Collect Promises only
+      // when fireCel actually yielded — sync graphs never allocate the
+      // promises array.
+      let promises: Promise<void>[] | null = null;
+      for (const key of level) {
+        if (!affected.has(key)) continue;
+        const r = fireCel(state, key, suppression, changed);
+        if (r instanceof Promise) {
+          if (!promises) promises = [];
+          promises.push(r);
         }
       }
-      const newV = await settle(fn(inputs));
-
-      if (!suppression) {
-        cel.v = newV;
-        // Full-mode cascade (boot from scratch) still routes to channels
-        // — host code may want a "paint everything" pass at startup.
-        enqueueChannels(cel, state);
-        continue;
-      }
-
-      // Output diff: cel.v IS the previous value until we overwrite
-      // it. Compare in place — no separate _lastV slot needed.
-      // _isChanged is materialized at hydrate from the cel's schema's
-      // SchemaMetadata.isChanged. No fallback to tag — change detection
-      // is a schema concern, not a value-protocol concern. Falsy
-      // _isChanged means reference equality.
-      const isChanged = cel._isChanged
-        ? !!(await settle(cel._isChanged(cel.v, newV)))
-        : cel.v !== newV;
-      if (isChanged) {
-        // If the schema declares a diff fn, run it on (prev, next)
-        // before overwriting cel.v. Diff result lives on cel._diff
-        // for downstream consumers (DOM painters, audit log, sync).
-        if (cel._diffFn) {
-          cel._diff = await settle(cel._diffFn(cel.v, newV));
-        }
-        releaseValue(cel.v, cel.tag, state.tagRegistry);
-        cel.v = newV;
-        changed!.add(key);
-        // Route to channels AFTER cel.v / cel._diff are settled so the
-        // channel sees consistent state when it reads them.
-        enqueueChannels(cel, state);
-      }
+      if (promises) await Promise.all(promises);
     }
   }
 };
@@ -150,8 +231,10 @@ export const runCycle: Fn = async (state: State) => {
   if (!indexes) return state;
 
   const all = new Set<Key>();
-  for (const keys of indexes.waveCascade.values()) {
-    for (const k of keys) all.add(k);
+  for (const levels of indexes.waveCascade.values()) {
+    for (const level of levels) {
+      for (const k of level) all.add(k);
+    }
   }
   // Full mode (no `changed` arg) — every lambda cel fires from scratch.
   await runCascade(state, all);

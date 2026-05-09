@@ -7,9 +7,13 @@ import type { Cel, Key, State } from "../types/index.js";
 // whenever the cel graph changes.
 //
 // Indexes:
-//   • waveCascade — wave → topo-sorted lambda cel keys. Used by
-//     runCycle (full cascade) and as the iteration order for any
-//     filtered subset.
+//   • waveCascade — wave → ordered levels of mutually-independent
+//     lambda cel keys. Each level is a Kahn frontier: every cel in
+//     level N has all of its in-wave upstream deps in levels < N.
+//     Cels within a single level have no transitive dep edge between
+//     them, so runCascade fires them concurrently (Promise.all over
+//     async fns; sync fns just complete inline). Used by runCycle
+//     (full cascade) and by the input fns for filtered subsets.
 //   • downstream  — for each key, the closure of cels downstream
 //     of it (children + grandchildren …). Used by set/batch to fire
 //     only what the write affects.
@@ -21,8 +25,9 @@ import type { Cel, Key, State } from "../types/index.js";
 export const PRECOMPUTED_STATES_KEY = "precomputedStates" as const;
 
 export interface PrecomputedIndexes {
-  /** wave → ordered lambda cel keys to fire in that wave. */
-  waveCascade: Map<number, Key[]>;
+  /** wave → list of levels; each level is a list of cel keys that
+   *  share no in-wave upstream-downstream edge with each other. */
+  waveCascade: Map<number, Key[][]>;
   /** key → set of cel keys downstream of it (excluding self). */
   downstream: Map<Key, Set<Key>>;
   /** Union of every dynamic cel + its downstream closure. */
@@ -40,9 +45,9 @@ export const precompute = (state: State): void => {
     if (!bucket) { bucket = []; byWave.set(wave, bucket); }
     bucket.push(cel.key);
   }
-  const waveCascade = new Map<number, Key[]>();
+  const waveCascade = new Map<number, Key[][]>();
   for (const [wave, members] of byWave) {
-    waveCascade.set(wave, topoSort(members, cels));
+    waveCascade.set(wave, topoLevels(members, cels));
   }
 
   const children = buildChildren(cels);
@@ -113,9 +118,11 @@ const buildDynamicCascade = (
   return result;
 };
 
-// Kahn's: order `members` so every in-set upstream comes before its
-// dependants. Throws if a cycle is found.
-const topoSort = (members: Key[], cels: Map<Key, Cel>): Key[] => {
+// Kahn's, level-aware: order `members` into a sequence of levels so
+// every cel's in-set upstream is in a strictly earlier level. Cels
+// within a level have no transitive dep edge between them — they can
+// fire concurrently. Throws if a cycle is found.
+const topoLevels = (members: Key[], cels: Map<Key, Cel>): Key[][] => {
   const memberSet = new Set(members);
   const upstreamOf = new Map<Key, Set<Key>>();
   for (const key of members) {
@@ -131,7 +138,7 @@ const topoSort = (members: Key[], cels: Map<Key, Cel>): Key[] => {
     upstreamOf.set(key, ds);
   }
 
-  const order: Key[] = [];
+  const levels: Key[][] = [];
   const remaining = new Set(members);
   while (remaining.size > 0) {
     const ready: Key[] = [];
@@ -145,10 +152,8 @@ const topoSort = (members: Key[], cels: Map<Key, Cel>): Key[] => {
     if (ready.length === 0) {
       throw new Error(`Dependency cycle in cel graph; remaining: ${[...remaining].join(", ")}`);
     }
-    for (const k of ready) {
-      order.push(k);
-      remaining.delete(k);
-    }
+    levels.push(ready);
+    for (const k of ready) remaining.delete(k);
   }
-  return order;
+  return levels;
 };
