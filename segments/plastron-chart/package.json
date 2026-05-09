@@ -1,0 +1,14 @@
+{
+  "name": "plastron-chart",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Tiny SVG bar-chart helper for plastron-dom — pure VNode output, per-bar color overrides, zero runtime dependencies.",
+  "main": "src/index.ts",
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}
