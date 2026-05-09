@@ -50,10 +50,16 @@ export const sessionSegment: Segment = {
       inputMap: { crack: "crack" },
     },
     {
-      key: "tree",
+      key: "appTree",
       segment: "session",
       l: "buildTree",
-      inputMap: { charge: "charge", crack: "crack", omen: "omen" },
+      inputMap: {
+        heat:      "heat",
+        thickness: "thickness",
+        charge:    "charge",
+        crack:     "crack",
+        omen:      "omen",
+      },
       schema: VNODE_SCHEMA_KEY,
     },
   ],
