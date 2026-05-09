@@ -19,6 +19,7 @@
 
 import type { z } from "zod";
 import type { Cel, DehydratedCel } from "./cels.js";
+import type { ChannelKey, ChannelHandler } from "./channels.js";
 import type { Fn, KindKey, LambdaKey, LambdaMetadata } from "./lambdas.js";
 import type { SchemaKey, SchemaMetadata } from "./schemas.js";
 import type { TagKey, TagHandler } from "./tags.js";
@@ -68,6 +69,10 @@ export interface State {
   /** Pluggable lambda compilers, keyed by kind. Like tag handlers,
    *  these don't round-trip — host code installs them at runtime. */
   kindRegistry: Map<KindKey, KindHandler>;
+  /** Pluggable side-effect outputs, keyed by channel name. runCascade
+   *  enqueues changed cels onto their bound channels; channels own
+   *  scheduling + commit. Like tag/kind handlers, these don't round-trip. */
+  channelRegistry: Map<ChannelKey, ChannelHandler>;
 }
 
 /** Fold a list of segments + fn registries into the state's four maps
@@ -84,6 +89,7 @@ export type Hydrate = (
 export type Dehydrate = (state: State) => Segment[];
 
 export type { Cel, DehydratedCel } from "./cels.js";
+export type { ChannelKey, ChannelHandler, ChannelEnqueue } from "./channels.js";
 export type { Fn, KindKey, LambdaKey, LambdaMetadata } from "./lambdas.js";
 export type { SchemaKey, SchemaMetadata, DehydrateSchemas, HydrateSchemas } from "./schemas.js";
 export type { TagKey, TagHandler } from "./tags.js";

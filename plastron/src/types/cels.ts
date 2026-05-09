@@ -1,5 +1,6 @@
 import type { z } from "zod";
 import type { Key } from "./index.js";
+import type { ChannelKey } from "./channels.js";
 import type { Fn, LambdaKey } from "./lambdas.js";
 import type { SchemaKey } from "./schemas.js";
 import type { TagKey } from "./tags.js";
@@ -31,6 +32,11 @@ export interface Cel {
    *  state.tagRegistry[tag] supplies comparator / serialize / release
    *  callbacks for opaque values (Buffers, handles, streams, …). */
   tag?: TagKey;
+  /** Channel binding(s). When set, runCascade calls
+   *  state.channelRegistry[channel].enqueue({cel, state}) every time
+   *  this cel's value changes. A list fans out to every named channel.
+   *  Channels own coalescing + commit timing — kernel just routes. */
+  channel?: ChannelKey | ChannelKey[];
 
   // ── Materialized at hydrate time, runtime-only (not on DehydratedCel) ──
 
@@ -74,4 +80,5 @@ export interface DehydratedCel {
   dynamic?: boolean;
   f?: string;
   tag?: TagKey;
+  channel?: ChannelKey | ChannelKey[];
 }

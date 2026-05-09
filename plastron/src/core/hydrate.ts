@@ -78,6 +78,7 @@ const inflate = (
   if (dc.locked   !== undefined) cel.locked   = dc.locked;
   if (dc.dynamic  !== undefined) cel.dynamic  = dc.dynamic;
   if (dc.tag      !== undefined) cel.tag      = dc.tag;
+  if (dc.channel  !== undefined) cel.channel  = dc.channel;
   if (dc.f        !== undefined) {
     if (dc.l !== undefined && dc.l !== "f") {
       throw new Error(`Cel "${dc.key}" has both .f and .l — they're mutually exclusive.`);
@@ -123,6 +124,7 @@ const deflate = (
   if (c.dynamic  !== undefined) dc.dynamic  = c.dynamic;
   if (c.f        !== undefined) dc.f        = c.f;
   if (c.tag      !== undefined) dc.tag      = c.tag;
+  if (c.channel  !== undefined) dc.channel  = c.channel;
   return dc;
 };
 

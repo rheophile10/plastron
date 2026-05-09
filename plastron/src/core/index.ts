@@ -1,7 +1,7 @@
 import type { Fn, LambdaKey, LambdaMetadata } from "../types/index.js";
 import { hydrate, dehydrate } from "./hydrate.js";
 import { runCycle } from "./runCycle.js";
-import { get, set, batch, touch, consume } from "./input.js";
+import { get, set, batch, touch, consume, flushSync } from "./input.js";
 import { flush } from "./flush.js";
 import { compileFormula, extractDeps } from "./formula.js";
 
@@ -47,6 +47,7 @@ const coreFnEntries: ReadonlyArray<CoreFnEntry> = [
   { key: "hydrate",   fn: hydrate,   locked: true  },
   { key: "dehydrate", fn: dehydrate, locked: true  },
   { key: "flush",     fn: flush,     locked: true  },
+  { key: "flushSync", fn: flushSync, locked: true  },
   { key: "f",         fn: formulaFn, locked: false },
 ];
 

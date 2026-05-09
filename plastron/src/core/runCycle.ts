@@ -1,6 +1,23 @@
-import type { Fn, Key, State } from "../types/index.js";
+import type { Cel, Fn, Key, State } from "../types/index.js";
 import { PRECOMPUTED_STATES_KEY, type PrecomputedIndexes } from "./precompute.js";
 import { releaseValue } from "./hydrate.js";
+
+// If `v` is a Promise, await it; otherwise return it directly. Lets a
+// fully-sync cascade run without microtask yields, while still tolerating
+// async fns transparently.
+const settle = async <T,>(v: T | Promise<T>): Promise<T> =>
+  v instanceof Promise ? await v : v;
+
+// Route a changed cel onto every channel listed in cel.channel. Channel
+// reads cel.v / cel._diff itself — kernel doesn't pre-decide which one
+// matters. No-op if no channel binding or no handler registered.
+const enqueueChannels = (cel: Cel, state: State): void => {
+  if (!cel.channel) return;
+  const keys = Array.isArray(cel.channel) ? cel.channel : [cel.channel];
+  for (const k of keys) {
+    state.channelRegistry.get(k)?.enqueue({ cel, state });
+  }
+};
 
 // ============================================================================
 // runCycle (full cascade) + internal helpers (runCascade, affectedFor)
@@ -76,10 +93,13 @@ export const runCascade = async (
             : cels.get(ref)?.v;
         }
       }
-      const newV = await Promise.resolve(fn(inputs));
+      const newV = await settle(fn(inputs));
 
       if (!suppression) {
         cel.v = newV;
+        // Full-mode cascade (boot from scratch) still routes to channels
+        // — host code may want a "paint everything" pass at startup.
+        enqueueChannels(cel, state);
         continue;
       }
 
@@ -90,18 +110,21 @@ export const runCascade = async (
       // is a schema concern, not a value-protocol concern. Falsy
       // _isChanged means reference equality.
       const isChanged = cel._isChanged
-        ? !!(await Promise.resolve(cel._isChanged(cel.v, newV)))
+        ? !!(await settle(cel._isChanged(cel.v, newV)))
         : cel.v !== newV;
       if (isChanged) {
         // If the schema declares a diff fn, run it on (prev, next)
         // before overwriting cel.v. Diff result lives on cel._diff
         // for downstream consumers (DOM painters, audit log, sync).
         if (cel._diffFn) {
-          cel._diff = await Promise.resolve(cel._diffFn(cel.v, newV));
+          cel._diff = await settle(cel._diffFn(cel.v, newV));
         }
         releaseValue(cel.v, cel.tag, state.tagRegistry);
         cel.v = newV;
         changed!.add(key);
+        // Route to channels AFTER cel.v / cel._diff are settled so the
+        // channel sees consistent state when it reads them.
+        enqueueChannels(cel, state);
       }
     }
   }
