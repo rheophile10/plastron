@@ -1,0 +1,281 @@
+:root {
+  --ink:        #1a1a1a;
+  --paper:      #fafaf6;
+  --rule:       #d8d3c4;
+  --accent:     #8b3a2b;
+  --accent-soft:#b15a4a;
+  --muted:      #6b6557;
+  --error:      #a04040;
+  font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", system-ui, sans-serif;
+  color: var(--ink);
+  background: var(--paper);
+}
+
+body {
+  margin: 0;
+  min-height: 100vh;
+  position: relative;
+  overflow-x: hidden;
+}
+
+/* Large 甲 watermark — the oracle-bone shell character that names
+   the archive format and the spirit of the project. Sits behind all
+   content, drifts gently. */
+body::before {
+  content: "甲";
+  position: fixed;
+  top: 50%;
+  right: -8vmin;
+  transform: translateY(-50%);
+  font-family: "Noto Serif CJK TC", "Songti SC", "STSong", "PMingLiU", serif;
+  font-size: 70vmin;
+  line-height: 1;
+  color: var(--accent);
+  opacity: 0.06;
+  pointer-events: none;
+  user-select: none;
+  z-index: 0;
+  animation: watermark-drift 18s ease-in-out infinite;
+}
+
+#root { position: relative; z-index: 1; }
+
+#root {
+  max-width: 720px;
+  margin: 0 auto;
+  padding: 32px 24px;
+  animation: page-in 0.45s ease-out both;
+}
+
+.app {
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+/* ─── nav ────────────────────────────────────────────────────────── */
+
+nav.app-nav {
+  display: flex;
+  gap: 8px;
+  border-bottom: 1px solid var(--rule);
+  padding-bottom: 12px;
+}
+
+nav.app-nav button {
+  font: inherit;
+  padding: 8px 14px;
+  border: 1px solid var(--rule);
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+  border-radius: 4px;
+  transition:
+    background 0.18s ease,
+    color      0.18s ease,
+    border-color 0.18s ease,
+    transform  0.08s ease,
+    box-shadow 0.18s ease;
+}
+
+nav.app-nav button:hover {
+  color: var(--ink);
+  border-color: var(--accent-soft);
+}
+
+nav.app-nav button:active {
+  transform: translateY(1px);
+}
+
+nav.app-nav button.active {
+  border-color: var(--accent);
+  color: var(--accent);
+  background: white;
+  box-shadow: 0 1px 0 0 var(--accent) inset;
+}
+
+/* ─── main ───────────────────────────────────────────────────────── */
+
+main.app-main {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+}
+
+/* Whichever section is mounted: when its tag changes (counter → weather),
+   the painter creates fresh inner elements (the section's children at
+   indices 1+ are replaced because their tags differ between views).
+   The fresh elements run their entrance animations. */
+section.counter,
+section.weather {
+  border: 1px solid var(--rule);
+  background: white;
+  padding: 20px 24px;
+  border-radius: 6px;
+  animation: section-in 0.32s ease-out both;
+}
+
+section.counter h2,
+section.weather h2 {
+  margin: 0 0 12px;
+  font-size: 1.05rem;
+  letter-spacing: 0.04em;
+  color: var(--accent);
+  text-transform: uppercase;
+}
+
+/* ─── counter ────────────────────────────────────────────────────── */
+
+section.counter .count {
+  font-family: "Noto Serif CJK TC", "Songti SC", "STSong", "PMingLiU", serif;
+  font-size: 3.4rem;
+  line-height: 1.1;
+  letter-spacing: 0.04em;
+  color: var(--ink);
+  margin: 8px 0 4px;
+  transition: color 0.2s ease;
+  animation: number-in 0.4s cubic-bezier(0.34, 1.56, 0.64, 1) both;
+}
+
+section.counter .count-arabic {
+  font-size: 0.85rem;
+  font-variant-numeric: tabular-nums;
+  color: var(--muted);
+  margin: 0 0 16px;
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
+section.counter button {
+  font: inherit;
+  padding: 8px 18px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+  border-radius: 4px;
+  transition:
+    background 0.18s ease,
+    box-shadow 0.18s ease,
+    transform  0.08s ease;
+}
+
+section.counter button:hover {
+  background: var(--accent-soft);
+  box-shadow: 0 2px 6px rgba(139, 58, 43, 0.25);
+}
+
+section.counter button:active {
+  transform: translateY(1px) scale(0.98);
+  box-shadow: 0 1px 2px rgba(139, 58, 43, 0.4) inset;
+}
+
+/* ─── weather ────────────────────────────────────────────────────── */
+
+section.weather .row {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+section.weather input {
+  font: inherit;
+  flex: 1;
+  padding: 8px 10px;
+  border: 1px solid var(--rule);
+  border-radius: 4px;
+  transition:
+    border-color 0.15s ease,
+    box-shadow   0.15s ease;
+}
+
+section.weather input:hover {
+  border-color: var(--accent-soft);
+}
+
+section.weather input:focus {
+  outline: none;
+  border-color: var(--accent);
+  box-shadow: 0 0 0 3px rgba(139, 58, 43, 0.18);
+}
+
+section.weather button {
+  font: inherit;
+  padding: 8px 18px;
+  border: 1px solid var(--accent);
+  background: var(--accent);
+  color: white;
+  cursor: pointer;
+  border-radius: 4px;
+  transition:
+    background 0.18s ease,
+    box-shadow 0.18s ease,
+    transform  0.08s ease;
+}
+
+section.weather button:hover {
+  background: var(--accent-soft);
+  box-shadow: 0 2px 6px rgba(139, 58, 43, 0.25);
+}
+
+section.weather button:active {
+  transform: translateY(1px) scale(0.98);
+}
+
+section.weather .result {
+  font-size: 0.95rem;
+  color: var(--muted);
+  /* Text content updates in place; the color transition fades between
+     muted ↔ ink ↔ error states when the painter swaps the class. */
+  transition: color 0.25s ease;
+}
+
+section.weather .result strong {
+  color: var(--ink);
+}
+
+section.weather .result.error {
+  color: var(--error);
+}
+
+/* The render lambda stamps one of `idle | loading | ok | error` on
+   the .result paragraph. Pulse only while loading. */
+section.weather .result.loading {
+  animation: subtle-pulse 1.6s ease-in-out infinite;
+}
+
+/* ─── keyframes ──────────────────────────────────────────────────── */
+
+@keyframes page-in {
+  from { opacity: 0; transform: translateY(6px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+
+@keyframes section-in {
+  from { opacity: 0; transform: translateY(8px) scale(0.99); }
+  to   { opacity: 1; transform: translateY(0)   scale(1); }
+}
+
+@keyframes number-in {
+  0%   { opacity: 0; transform: translateY(-6px) scale(0.85); }
+  100% { opacity: 1; transform: translateY(0)    scale(1); }
+}
+
+@keyframes subtle-pulse {
+  0%, 100% { opacity: 1; }
+  50%      { opacity: 0.55; }
+}
+
+@keyframes watermark-drift {
+  0%, 100% { transform: translateY(-50%) translateX(0)    rotate(0deg); }
+  50%      { transform: translateY(-48%) translateX(-1vw) rotate(-1.5deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.001s !important;
+    animation-delay: 0s !important;
+    transition-duration: 0.001s !important;
+  }
+}

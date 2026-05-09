@@ -1,0 +1,19 @@
+{
+  "name": "plastron-spa-demo",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Vite SPA showcasing a plastron app with a nav menu, two segments (counter, weather), and DOM rendering via plastron-dom.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3",
+    "vite": "^5.4.10"
+  }
+}
