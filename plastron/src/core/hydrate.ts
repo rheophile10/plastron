@@ -286,9 +286,9 @@ export const hydrate: Hydrate = (state, segments, fns) => {
     if (compiled.dispose) cel._dispose = compiled.dispose;
   }
 
-  // Materialize cel._isChanged from schemaMetadata.diffFn. Runs after
-  // fns are installed so the diff fn is guaranteed to be available.
-  // Walks every cel — fine for small graphs; revisit if it gets hot.
+  // Materialize cel._isChanged and cel._diffFn from schemaMetadata.
+  // Runs after fns are installed so referenced fns are guaranteed
+  // available. Walks every cel — fine for small graphs.
   if (state.schemaMetadata.size > 0) {
     const keyOf = new Map<z.ZodType, SchemaKey>();
     for (const [k, zod] of state.schemas) keyOf.set(zod, k);
@@ -296,10 +296,16 @@ export const hydrate: Hydrate = (state, segments, fns) => {
       if (!cel.schema) continue;
       const schemaKey = keyOf.get(cel.schema);
       if (!schemaKey) continue;
-      const diffFn = state.schemaMetadata.get(schemaKey)?.diffFn;
-      if (!diffFn) continue;
-      const fn = state.fns.get(diffFn);
-      if (fn) cel._isChanged = fn;
+      const meta = state.schemaMetadata.get(schemaKey);
+      if (!meta) continue;
+      if (meta.isChanged) {
+        const fn = state.fns.get(meta.isChanged);
+        if (fn) cel._isChanged = fn;
+      }
+      if (meta.diff) {
+        const fn = state.fns.get(meta.diff);
+        if (fn) cel._diffFn = fn;
+      }
     }
   }
 

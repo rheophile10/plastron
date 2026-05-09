@@ -85,18 +85,20 @@ export const runCascade = async (
 
       // Output diff: cel.v IS the previous value until we overwrite
       // it. Compare in place — no separate _lastV slot needed.
-      // Precedence: cel._isChanged (per-cel/per-schema override) →
-      // tag.comparator (per-format protocol) → reference equality.
-      let isChanged: boolean;
-      if (cel._isChanged) {
-        isChanged = !!(await Promise.resolve(cel._isChanged(cel.v, newV)));
-      } else if (cel.tag !== undefined) {
-        const cmp = state.tagRegistry.get(cel.tag)?.comparator;
-        isChanged = cmp ? !!cmp(cel.v, newV) : cel.v !== newV;
-      } else {
-        isChanged = cel.v !== newV;
-      }
+      // _isChanged is materialized at hydrate from the cel's schema's
+      // SchemaMetadata.isChanged. No fallback to tag — change detection
+      // is a schema concern, not a value-protocol concern. Falsy
+      // _isChanged means reference equality.
+      const isChanged = cel._isChanged
+        ? !!(await Promise.resolve(cel._isChanged(cel.v, newV)))
+        : cel.v !== newV;
       if (isChanged) {
+        // If the schema declares a diff fn, run it on (prev, next)
+        // before overwriting cel.v. Diff result lives on cel._diff
+        // for downstream consumers (DOM painters, audit log, sync).
+        if (cel._diffFn) {
+          cel._diff = await Promise.resolve(cel._diffFn(cel.v, newV));
+        }
         releaseValue(cel.v, cel.tag, state.tagRegistry);
         cel.v = newV;
         changed!.add(key);

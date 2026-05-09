@@ -35,9 +35,20 @@ export interface Cel {
   // ── Materialized at hydrate time, runtime-only (not on DehydratedCel) ──
 
   /** Resolved change-detection fn for this cel's value. Cached from
-   *  state.schemaMetadata[cel.schemaKey].diffFn → state.fns.get(diffFn).
-   *  Falsy means fall back to reference equality. */
+   *  state.schemaMetadata[cel.schemaKey].isChanged → state.fns.get(...).
+   *  Falsy means fall back to reference equality. Returns true when
+   *  the value materially changed. */
   _isChanged?: Fn;
+  /** Resolved diff fn for this cel's value. Cached from
+   *  state.schemaMetadata[cel.schemaKey].diff. Optional — when present,
+   *  runCascade calls it on (prev, next) after _isChanged returns true
+   *  and stores the result on _diff. */
+  _diffFn?: Fn;
+  /** Last diff produced by _diffFn, refreshed by runCascade whenever
+   *  the cel's value changes. Domain-specific shape; the kernel never
+   *  inspects it. Consumers (DOM painter, audit log, sync) read this
+   *  via state.cels.get(key)._diff. */
+  _diff?: unknown;
   /** Per-cel compiled fn. When set, runCascade uses this directly
    *  instead of looking up cel.l in state.fns. Used for formula cels
    *  whose body is closed over a parsed AST at hydrate time. */

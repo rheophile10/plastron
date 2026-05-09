@@ -10,10 +10,18 @@ export type SchemaKey = Key;
 export interface SchemaMetadata {
   key: SchemaKey;
   /** LambdaKey of the change-detection fn for values of this schema.
-   *  Resolved at hydrate to state.fns.get(diffFn) and cached on
+   *  Resolved at hydrate to state.fns.get(isChanged) and cached on
    *  every cel that declares this schema as cel._isChanged. Falsy =
-   *  fall back to reference equality (===). */
-  diffFn?: LambdaKey;
+   *  fall back to reference equality (===). Returns true when the
+   *  value materially changed. */
+  isChanged?: LambdaKey;
+  /** Optional LambdaKey of a diff fn for values of this schema. When
+   *  defined, the kernel calls it on (prev, next) after isChanged
+   *  reports true and stores the result on cel._diff. The diff shape
+   *  is domain-specific — VNode patches, JSON-pointer ops, audit
+   *  events, replication deltas — and consumers read it from
+   *  cel._diff. The kernel itself never inspects the value. */
+  diff?: LambdaKey;
 }
 
 // ============================================================================
