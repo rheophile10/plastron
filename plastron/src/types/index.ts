@@ -1,5 +1,5 @@
 // ============================================================================
-// plastron-simplified — type barrel
+// plastron — type barrel
 //
 // State is four maps: cels, fns, fnMetadata, schemas.
 //
