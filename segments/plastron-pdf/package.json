@@ -1,0 +1,17 @@
+{
+  "name": "plastron-pdf",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "PDF text-extraction segment for plastron — wraps pdfjs-dist's getTextContent into row-grouped page objects keyed by Y position.",
+  "main": "src/index.ts",
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "pdfjs-dist": "^4.7.76"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}
