@@ -1,0 +1,19 @@
+{
+  "name": "plastron-sheet",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Spreadsheet client built on plastron — each visible cell is a plastron cel, formulas use Excel-style infix syntax wired into the kernel's swappable formula slot.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3",
+    "vite": "^5.4.10"
+  }
+}
