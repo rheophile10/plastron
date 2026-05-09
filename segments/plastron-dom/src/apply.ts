@@ -166,6 +166,22 @@ const createNode = (
 // ------------------------------------------------------------------------
 
 const writeAttr = (el: Element, name: string, value: AttrValue): void => {
+  // Form-element value: the `value` attribute is the *default* value;
+  // the displayed value is the IDL property, and setAttribute alone
+  // won't update it once the user has interacted. Write both so a
+  // controlled form element reflects programmatic changes (e.g., a
+  // formula bar tracking the selected cell).
+  if (
+    name === "value" &&
+    (el.tagName === "INPUT" || el.tagName === "TEXTAREA")
+  ) {
+    const next =
+      value === null || value === undefined || value === false ? "" : String(value);
+    if ((el as HTMLInputElement).value !== next) {
+      (el as HTMLInputElement).value = next;
+    }
+  }
+
   if (value === null || value === undefined || value === false) {
     el.removeAttribute(name);
   } else if (value === true) {
