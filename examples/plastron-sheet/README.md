@@ -1,13 +1,9 @@
 # plastron-sheet
 
-A spreadsheet client built on plastron. Looks and feels like a small
-ledger app: column letters, row numbers, click-to-select,
-double-click-to-edit, formula bar at the top.
-
-The "spreadsheet" is a thin UI sitting on top of the kernel — every
-visible cell is one plastron cel keyed by its address (`A1`, `B7`, …),
-and Excel-style formulas plug into the kernel's swappable formula
-slot. There's no separate spreadsheet engine.
+A spreadsheet client built on plastron. Every visible cell is one
+plastron cel keyed by its address (`A1`, `B7`, …); Excel-style infix
+formulas plug into the kernel's swappable formula slot. There is no
+separate spreadsheet engine — the kernel runs the cascade.
 
 ## Run
 
@@ -51,71 +47,10 @@ hydrate(state, [], [new Map([["f", infixFormula]])]);
 
 That's the whole story for "make plastron speak Excel."
 
-## Selection
+## Edit commit pipeline
 
-- **Click** a cell → anchor + extent collapse to that cell.
-- **Drag** across cells (mousedown, hover, mouseup) → rectangular
-  range. The anchor is where the drag started; the extent moves with
-  the cursor. Releasing the mouse anywhere (in or out of the grid)
-  ends the drag.
-- **Shift-click** → keeps the anchor, moves the extent.
-
-The name box at the top shows `A1` for a single cell and `A1:C5` for
-a range. The formula bar always reflects the anchor cell.
-
-## Keyboard navigation
-
-When a cell is selected (and not in edit mode):
-
-- **Enter** / **↓** — move down. Shift-Enter / **↑** moves up.
-- **Tab** / **→** — move right. Shift-Tab / **←** moves left.
-- The selection clamps at the grid edge (no wrap).
-
-When the cell is being edited:
-
-- **Enter** commits and advances down (shift-Enter goes up).
-- **Tab** commits and advances right (shift-Tab goes left).
-- **Escape** cancels the edit without committing.
-
-Both paths flow through `sheet:moveSelection`, registered as a
-kernel fn — the same handler is reachable from the document keydown
-listener and from the cell editor's keydown.
-
-## Clipboard
-
-- **Cmd/Ctrl-C** → emits TSV (rows by `\n`, cols by `\t`) of the
-  selected rectangle. Formula cells emit their *values*, not the
-  formula source — Excel's default behavior.
-- **Cmd/Ctrl-V** → pastes TSV at the anchor cell. Each entry is
-  classified the same way as a typed edit: `=…` becomes a formula,
-  numeric strings become numbers, everything else stays as strings.
-  Out-of-grid entries are silently dropped. After paste, the
-  selection extent grows to cover the pasted block.
-
-The clipboard handlers live on `document` (in `main.ts`) because the
-copy/paste events fire there when no input is focused; if a cell is
-being edited, the input owns its own clipboard and we skip handling.
-
-## Edit lifecycle
-
-Three ways to edit a cell:
-
-1. **Double-click** → opens the in-cell input seeded with the cell's
-   current content (preserves what's there for tweaking).
-2. **Type on a selected cell** → opens the in-cell input seeded with
-   the keystroke (Excel-style "replace": typing clobbers the cell).
-   A document-level keydown listener in `main.ts` watches for
-   single-character keys with no modifiers and dispatches
-   `sheet:typeIntoSelected`; once the patch has been applied, the
-   listener focuses the new input and pins the cursor at the end.
-3. **Click the formula bar and type** → the bar is a real `<input>`
-   that always shows the active cell's content. Captures the
-   currently-selected address on focus, commits to that address on
-   Enter or blur (so clicking another cell mid-edit still commits to
-   the original target). Escape skips the commit on the upcoming blur
-   via a closure flag.
-
-In every case, the commit pipeline is the same:
+Every cell commit (typed edit, double-click edit, formula bar, paste)
+flows through the same three steps:
 
 1. classify `event.target.value` — `"=…"` → formula, parses-as-number
    → number, else string.
@@ -126,18 +61,15 @@ In every case, the commit pipeline is the same:
 3. `runCycle(state)` — propagates the new value through every
    dependent cell.
 
-`__sheet:editSeed` is the bit of glue that makes type-to-edit work
-distinctly from double-click: the render lambda uses it as the
-input's initial value if non-empty, falling back to the cell's
-existing content otherwise. It's cleared on commit / cancel.
+`__sheet:editSeed` is the glue that distinguishes type-to-edit from
+double-click: the render lambda uses it as the input's initial value
+if non-empty, falling back to the cell's existing content otherwise.
+It's cleared on commit / cancel.
 
-A small change to `plastron-dom`'s `apply.ts` makes the controlled
-formula bar behave correctly: writes to the `value` attribute on
-`<input>` / `<textarea>` elements also write the IDL property, so
-when the active cell changes the formula bar's displayed text
-updates even after the user has interacted with the input. (Without
-this, `setAttribute("value", …)` doesn't refresh the displayed value
-once it's been edited by the user — standard form-element gotcha.)
+The keyboard- and mouse-driven move-selection paths both flow through
+one fn, `sheet:moveSelection`, registered in the kernel — same
+handler is reachable from the document keydown listener and from the
+cell editor.
 
 ## Formula bar / name box
 
@@ -152,6 +84,23 @@ The toolbar at the top is fed by three cels:
 
 Sources are stored without their leading `=`; the formula bar adds it
 back at display.
+
+A small change to plastron-dom's `apply.ts` makes the controlled
+formula bar behave correctly: writes to the `value` attribute on
+`<input>` / `<textarea>` elements also write the IDL property. Without
+that mirror, `setAttribute("value", …)` stops refreshing the
+displayed value once the user has interacted with the input —
+standard form-element gotcha.
+
+## Marquee
+
+The copy-marquee (border around the source range after Cmd-C) is a
+single `<div class="copy-marquee">` rendered in the graph with
+`data-start` / `data-end` attributes, then sized imperatively in
+`main.ts` from the actual cell `getBoundingClientRect` values via a
+`MutationObserver`. Cell-relative measurement avoids hardcoding
+pixel widths that browsers don't honor when `table-layout: fixed`
+interacts with surrounding flex constraints.
 
 ## Pre-loaded sheet
 
@@ -191,13 +140,8 @@ __plastronState.cels.get("__plastronDom:patch:app").v
 - **Range references** (`A1:A5`) — same.
 - **Relative-reference adjustment on paste** — when a formula is
   pasted at a different position, Excel rewrites cell refs in the
-  formula source. We paste literally; a fancy implementation would
+  formula source. We paste literally; a real implementation would
   walk the parsed AST and shift refs by the column/row delta.
-- **Single → fill paste** — Excel pastes a one-cell clipboard into
-  every selected target cell. We only paste at the anchor.
 - **Save / load** via plastron-archive — the sheet segment is already
   fully JSON-shape (formulas as text, no closures), so dehydrate +
   archive would round-trip; just isn't wired to a button yet.
-- **Keyboard navigation** (arrow keys, Tab) — would ride on the
-  existing dispatch handlers with new keydown bindings on the grid
-  container.
