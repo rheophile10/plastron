@@ -22,10 +22,5 @@ coverage/
 .claude/settings.local.json
 .claude/scheduled_tasks.lock
 
-# Personal scratch
-criticism.md
-
-# Architecture working docs — local only
-core-plan.md
-examples-roadmap.md
-pitches.md
+# Local-only working docs
+examples/plastron-sheet/plan.md
