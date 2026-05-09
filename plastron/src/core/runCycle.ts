@@ -2,9 +2,11 @@ import type { Cel, Fn, Key, State } from "../types/index.js";
 import { PRECOMPUTED_STATES_KEY, type PrecomputedIndexes } from "./precompute.js";
 import { releaseValue } from "./hydrate.js";
 
-// Route a changed cel onto every channel listed in cel.channel. Channel
-// reads cel.v / cel._diff itself — kernel doesn't pre-decide which one
-// matters. No-op if no channel binding or no handler registered.
+// Route a changed cel onto every channel resolved at precompute time.
+// _channelHandlers is materialized from cel.channel + state.channelRegistry
+// when precompute runs (at hydrate end and flush end), so the hot path
+// is a single property read + tight for loop — no Array.isArray check,
+// no Map.get per channel.
 //
 // NOTE on concurrency: cels in the same wave-level fire in parallel,
 // so multiple cels may enqueue onto the same channel within one
@@ -12,11 +14,9 @@ import { releaseValue } from "./hydrate.js";
 // just a Set add or queue push. The current DOM/log/persist designs
 // satisfy this trivially.
 const enqueueChannels = (cel: Cel, state: State): void => {
-  if (!cel.channel) return;
-  const keys = Array.isArray(cel.channel) ? cel.channel : [cel.channel];
-  for (const k of keys) {
-    state.channelRegistry.get(k)?.enqueue({ cel, state });
-  }
+  const handlers = cel._channelHandlers;
+  if (!handlers) return;
+  for (const h of handlers) h.enqueue({ cel, state });
 };
 
 // ============================================================================
@@ -80,13 +80,19 @@ const fireCel = (
 
   // Suppression mode: skip the lambda when no input changed
   // (dynamic cels always fire — their source is external).
+  // Walks _inputEntries (precomputed cel refs) instead of inputMap
+  // strings, avoiding Map.get per input on the suppression check too.
   if (suppression) {
     let shouldFire = cel.dynamic === true;
-    if (!shouldFire && cel.inputMap) {
-      outer: for (const ref of Object.values(cel.inputMap)) {
-        const refs = Array.isArray(ref) ? ref : [ref];
-        for (const k of refs) {
-          if (changed!.has(k)) { shouldFire = true; break outer; }
+    if (!shouldFire && cel._inputEntries) {
+      outer: for (const [, cs] of cel._inputEntries) {
+        if (cs === undefined) continue;
+        if (Array.isArray(cs)) {
+          for (const c of cs) {
+            if (c && changed!.has(c.key)) { shouldFire = true; break outer; }
+          }
+        } else if (changed!.has(cs.key)) {
+          shouldFire = true; break;
         }
       }
     }
@@ -94,11 +100,15 @@ const fireCel = (
   }
 
   const inputs: Record<string, unknown> = {};
-  if (cel.inputMap) {
-    for (const [name, ref] of Object.entries(cel.inputMap)) {
-      inputs[name] = Array.isArray(ref)
-        ? ref.map((k) => state.cels.get(k)?.v)
-        : state.cels.get(ref)?.v;
+  if (cel._inputEntries) {
+    for (const [name, cs] of cel._inputEntries) {
+      if (cs === undefined) {
+        inputs[name] = undefined;
+      } else if (Array.isArray(cs)) {
+        inputs[name] = cs.map((c) => c?.v);
+      } else {
+        inputs[name] = cs.v;
+      }
     }
   }
 
@@ -189,9 +199,8 @@ export const runCascade = async (
   if (!indexes || affected.size === 0) return;
 
   const suppression = changed !== undefined;
-  const waves = [...indexes.waveCascade.keys()].sort((a, b) => a - b);
 
-  for (const wave of waves) {
+  for (const wave of indexes.sortedWaves) {
     const levels = indexes.waveCascade.get(wave)!;
     for (const level of levels) {
       // Fire every affected cel in this level. Collect Promises only

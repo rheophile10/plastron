@@ -4,7 +4,7 @@ import type { Cel, Key, State } from "../types/index.js";
 // precompute — derive the indexes runCycle and the input fns need,
 // then write them into the locked precomputedStates cel. Internal:
 // hydrate imports it directly. NOT registered in coreFns. Run again
-// whenever the cel graph changes.
+// whenever the cel graph changes (hydrate end + flush end).
 //
 // Indexes:
 //   • waveCascade — wave → ordered levels of mutually-independent
@@ -14,12 +14,21 @@ import type { Cel, Key, State } from "../types/index.js";
 //     them, so runCascade fires them concurrently (Promise.all over
 //     async fns; sync fns just complete inline). Used by runCycle
 //     (full cascade) and by the input fns for filtered subsets.
+//   • sortedWaves — waveCascade keys sorted ascending. Cached so
+//     runCascade doesn't re-spread + re-sort on every cycle.
 //   • downstream  — for each key, the closure of cels downstream
 //     of it (children + grandchildren …). Used by set/batch to fire
 //     only what the write affects.
 //   • dynamicCascade — every cel marked `dynamic` plus their
 //     downstream closures, unioned. Always included on every cycle so
 //     volatile cels (clocks, randoms, externally-driven) refresh.
+//
+// In addition to the indexes, precompute materializes per-cel runtime
+// caches:
+//   • cel._inputEntries  — inputMap resolved to direct cel refs
+//   • cel._channelHandlers — cel.channel resolved to live handlers
+// These run last (after the index work) so they pick up the final cel
+// graph and the current state.channelRegistry.
 // ============================================================================
 
 export const PRECOMPUTED_STATES_KEY = "precomputedStates" as const;
@@ -28,6 +37,8 @@ export interface PrecomputedIndexes {
   /** wave → list of levels; each level is a list of cel keys that
    *  share no in-wave upstream-downstream edge with each other. */
   waveCascade: Map<number, Key[][]>;
+  /** waveCascade.keys() sorted ascending. Cached for runCascade. */
+  sortedWaves: number[];
   /** key → set of cel keys downstream of it (excluding self). */
   downstream: Map<Key, Set<Key>>;
   /** Union of every dynamic cel + its downstream closure. */
@@ -49,14 +60,63 @@ export const precompute = (state: State): void => {
   for (const [wave, members] of byWave) {
     waveCascade.set(wave, topoLevels(members, cels));
   }
+  const sortedWaves = [...waveCascade.keys()].sort((a, b) => a - b);
 
   const children = buildChildren(cels);
   const downstream = buildDownstream(cels, children);
   const dynamicCascade = buildDynamicCascade(cels, downstream);
 
+  resolveInputEntries(cels);
+  resolveChannelHandlers(state);
+
   const target = cels.get(PRECOMPUTED_STATES_KEY);
   if (target) {
-    target.v = { waveCascade, downstream, dynamicCascade } satisfies PrecomputedIndexes;
+    target.v = {
+      waveCascade, sortedWaves, downstream, dynamicCascade,
+    } satisfies PrecomputedIndexes;
+  }
+};
+
+// For every cel with an inputMap, resolve each declared key to its
+// live Cel object. The hot path then iterates this directly instead
+// of calling Map.get on every input on every fire. Slot order matches
+// Object.entries(inputMap). Missing upstreams resolve to undefined,
+// preserving the prior `state.cels.get(ref)?.v` behavior.
+const resolveInputEntries = (cels: Map<Key, Cel>): void => {
+  for (const cel of cels.values()) {
+    if (!cel.inputMap) {
+      cel._inputEntries = undefined;
+      continue;
+    }
+    const entries: Array<[string, Cel | undefined | Array<Cel | undefined>]> = [];
+    for (const [name, ref] of Object.entries(cel.inputMap)) {
+      if (Array.isArray(ref)) {
+        entries.push([name, ref.map((k) => cels.get(k))]);
+      } else {
+        entries.push([name, cels.get(ref)]);
+      }
+    }
+    cel._inputEntries = entries;
+  }
+};
+
+// For every cel with a channel binding, resolve to live handler refs
+// from state.channelRegistry. Channels not registered at precompute
+// time are silently dropped (host should register before hydrating
+// cels that reference them). Re-runs of precompute pick up changes.
+const resolveChannelHandlers = (state: State): void => {
+  for (const cel of state.cels.values()) {
+    if (!cel.channel) {
+      cel._channelHandlers = undefined;
+      continue;
+    }
+    const keys = Array.isArray(cel.channel) ? cel.channel : [cel.channel];
+    const handlers = [];
+    for (const k of keys) {
+      const h = state.channelRegistry.get(k);
+      if (h) handlers.push(h);
+    }
+    cel._channelHandlers = handlers.length > 0 ? handlers : undefined;
   }
 };
 

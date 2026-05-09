@@ -1,6 +1,6 @@
 import type { z } from "zod";
 import type { Key } from "./index.js";
-import type { ChannelKey } from "./channels.js";
+import type { ChannelHandler, ChannelKey } from "./channels.js";
 import type { Fn, LambdaKey } from "./lambdas.js";
 import type { SchemaKey } from "./schemas.js";
 import type { TagKey } from "./tags.js";
@@ -63,6 +63,23 @@ export interface Cel {
    *  removed. The kernel doesn't populate this itself — host code
    *  attaches it (e.g. a setup lambda that returns a teardown). */
   _dispose?: () => void;
+  /** inputMap resolved to direct cel references, materialized at
+   *  precompute time. The hot path iterates this instead of calling
+   *  Map.get on every input on every fire. Slot order matches
+   *  Object.entries(inputMap) at the time precompute ran. Each entry
+   *  is `[name, Cel | Cel[] | undefined]`; undefined means the
+   *  declared upstream key didn't resolve (preserves the prior
+   *  Map.get(...)?.v behavior). Rebuilt on every precompute, so it
+   *  stays consistent with hydrate / flush. Mutability surface kept
+   *  loose so Array.isArray narrows in the hot path — only precompute
+   *  writes this. */
+  _inputEntries?: Array<[string, Cel | undefined | Array<Cel | undefined>]>;
+  /** channel field resolved to live ChannelHandler references at
+   *  precompute time. Replaces the per-fire Array.isArray check + Map
+   *  lookup in enqueueChannels. Channels not in state.channelRegistry
+   *  at precompute time are silently dropped — register channels
+   *  before hydrating cels that reference them. */
+  _channelHandlers?: ChannelHandler[];
 }
 
 /** On-disk / JSON shape. Identical to Cel except `v` is optional
