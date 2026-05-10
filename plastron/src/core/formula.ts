@@ -1,7 +1,7 @@
-import type { Fn, Key } from "../types/index.js";
+import type { CompiledLambda, Fn, Key, ResolvedInputs } from "../types/index.js";
 
 // ============================================================================
-// S-expression formula parser.
+// S-expression formula parser + compiler.
 //
 // Grammar (informally):
 //   expr = NUMBER | SYMBOL | '(' expr* ')'
@@ -20,6 +20,20 @@ import type { Fn, Key } from "../types/index.js";
 //
 // Numbers are JS floats. Non-numeric values flowing through arithmetic
 // coerce via Number() and propagate NaN honestly.
+//
+// compileFormula returns a CompiledEnvelope:
+//   • fn            — generic Fn(inputs) entry point used by callers
+//                     that pass a freshly-built inputs object
+//                     (registerLambda fast path, ad-hoc invocation)
+//   • buildEvaluate — closure builder consumed by precompute. Captures
+//                     resolved cel refs directly and skips inputs-
+//                     object construction at fire time. Two
+//                     implementations chosen at module load:
+//                       • new-Function codegen for max V8 inlining
+//                       • AST-walk against resolved cels when CSP
+//                         blocks new Function or the formula uses
+//                         array-typed inputs (which the codegen path
+//                         doesn't emit for)
 // ============================================================================
 
 type SExp = number | string | SExp[];
@@ -110,9 +124,160 @@ export const extractDeps = (src: string): Key[] => {
   return out;
 };
 
-/** Parse a formula once and return a Fn that evaluates it against an
- *  inputs record. Throws on parse errors. */
-export const compileFormula = (src: string): Fn => {
+// ── buildEvaluate plumbing ──────────────────────────────────────────────────
+
+// Detect whether `new Function` works in this environment. Strict CSP
+// (script-src 'self' without 'unsafe-eval') blocks it. Detected once
+// at module load; result is stable for the process lifetime.
+const CODEGEN_AVAILABLE: boolean = (() => {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
+    new Function("return 1")();
+    return true;
+  } catch {
+    return false;
+  }
+})();
+
+// Walk the AST against resolved cels — same shape as `evaluate` but
+// reads cel.v inline rather than from a pre-built inputs record.
+// Used by buildEvaluate when codegen isn't available or the formula
+// uses array-typed inputs (which the codegen path doesn't emit for).
+const evaluateAgainstCels = (
+  exp: SExp,
+  cels: ResolvedInputs,
+): unknown => {
+  if (typeof exp === "number") return exp;
+  if (typeof exp === "string") {
+    const c = cels[exp];
+    if (c === undefined) return undefined;
+    if (Array.isArray(c)) return c.map((x) => x?.v);
+    return c.v;
+  }
+  if (!Array.isArray(exp) || exp.length === 0) return null;
+
+  const head = exp[0];
+  if (typeof head !== "string") {
+    throw new Error(`Cannot call non-symbol head: ${JSON.stringify(head)}`);
+  }
+  const args = exp.slice(1).map((a) => evaluateAgainstCels(a, cels));
+
+  if (head in BUILTINS) return BUILTINS[head](args);
+
+  const c = cels[head];
+  const fn = (c !== undefined && !Array.isArray(c)) ? c.v : undefined;
+  if (typeof fn !== "function") {
+    throw new Error(`Formula references "${head}" but it isn't a function or builtin.`);
+  }
+  return (fn as (...a: unknown[]) => unknown)(...args);
+};
+
+// Generate a JS expression body for the AST. Each unique symbol becomes
+// a closure parameter `c0`, `c1`, …; references in the expression read
+// `cN.v`. Function calls compile to `cN.v(arg, …)`. Builtins emit raw
+// arithmetic with Number() coercion to preserve the interpreter's
+// behavior on string inputs.
+const generateBody = (
+  ast: SExp,
+): { body: string; symbols: string[] } => {
+  const symbols: string[] = [];
+  const symbolIndex = new Map<string, number>();
+  const indexFor = (name: string): number => {
+    let i = symbolIndex.get(name);
+    if (i === undefined) {
+      i = symbols.length;
+      symbolIndex.set(name, i);
+      symbols.push(name);
+    }
+    return i;
+  };
+
+  const gen = (exp: SExp): string => {
+    if (typeof exp === "number") return JSON.stringify(exp);
+    if (typeof exp === "string") {
+      if (exp in BUILTINS) {
+        // Builtin appearing bare (not as list head) is degenerate.
+        // Fall back to AST walk for this formula by signalling.
+        throw new Error(`Builtin "${exp}" used as a value`);
+      }
+      return `c${indexFor(exp)}.v`;
+    }
+    if (!Array.isArray(exp) || exp.length === 0) return "null";
+
+    const head = exp[0];
+    if (typeof head !== "string") {
+      throw new Error(`Cannot call non-symbol head: ${JSON.stringify(head)}`);
+    }
+    const args = exp.slice(1).map(gen);
+
+    if (head === "+") {
+      if (args.length === 0) return "0";
+      return `(${args.map((a) => `Number(${a})`).join("+")})`;
+    }
+    if (head === "*") {
+      if (args.length === 0) return "1";
+      return `(${args.map((a) => `Number(${a})`).join("*")})`;
+    }
+    if (head === "-") {
+      if (args.length === 0) return "0";
+      if (args.length === 1) return `(-Number(${args[0]}))`;
+      return `(${args.map((a) => `Number(${a})`).join("-")})`;
+    }
+    if (head === "/") {
+      if (args.length === 0) return "NaN";
+      if (args.length === 1) return `(1/Number(${args[0]}))`;
+      return `(${args.map((a) => `Number(${a})`).join("/")})`;
+    }
+    return `c${indexFor(head)}.v(${args.join(",")})`;
+  };
+
+  return { body: gen(ast), symbols };
+};
+
+const hasArrayInput = (cels: ResolvedInputs, symbols: string[]): boolean => {
+  for (const name of symbols) {
+    if (Array.isArray(cels[name])) return true;
+  }
+  return false;
+};
+
+const buildEvaluateFor = (ast: SExp, cels: ResolvedInputs): (() => unknown) => {
+  if (CODEGEN_AVAILABLE) {
+    let body: string;
+    let symbols: string[];
+    try {
+      ({ body, symbols } = generateBody(ast));
+    } catch {
+      // Codegen-side limitation (e.g. bare builtin) — fall through to
+      // AST walk, which handles the same edge cases consistently.
+      return () => evaluateAgainstCels(ast, cels);
+    }
+    // Codegen output assumes scalar refs. If any input resolved to an
+    // array, fall back to the AST walk which handles arrays correctly.
+    if (hasArrayInput(cels, symbols)) {
+      return () => evaluateAgainstCels(ast, cels);
+    }
+    const params = symbols.map((_, i) => `c${i}`);
+    // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
+    const factory = new Function(
+      ...params,
+      `"use strict"; return function evaluate() { return ${body}; };`,
+    );
+    const args = symbols.map((name) => cels[name]);
+    return factory(...args) as () => unknown;
+  }
+  // CSP-blocked: AST walk against resolved cels. Still beats today
+  // because it skips Object.entries + per-fire cel lookups.
+  return () => evaluateAgainstCels(ast, cels);
+};
+
+/** Parse a formula once; return the runtime body + buildEvaluate hook
+ *  the kernel uses for the per-cel monomorphic closure path. */
+export const compileFormula = (src: string): CompiledLambda => {
   const ast = parse(src);
-  return (inputs: Record<string, unknown>) => evaluate(ast, inputs);
+  const fn: Fn = (inputs: Record<string, unknown>) => evaluate(ast, inputs);
+  return {
+    fn,
+    buildEvaluate: (cels: ResolvedInputs) => buildEvaluateFor(ast, cels),
+  };
 };
