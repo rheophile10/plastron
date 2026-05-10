@@ -1,0 +1,16 @@
+{
+  "name": "mjml-demo-example",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Terminal example — plastron + plastron-mjml. A content cel feeds an MJML cel; the rendered HTML is logged.",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.2",
+    "tsx": "^4.19.2",
+    "typescript": "~5.9.3"
+  }
+}
