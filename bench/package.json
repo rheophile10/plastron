@@ -1,0 +1,18 @@
+{
+  "name": "plastron-bench",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Benchmark suite for plastron — replaces estimates in notes/plastron-vs-excel.md with measurements.",
+  "scripts": {
+    "cascade": "tsx src/cascade-shape.ts",
+    "memory": "tsx src/memory-per-cel.ts",
+    "all": "npm run cascade && npm run memory",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.2",
+    "tsx": "^4.19.2",
+    "typescript": "~5.9.3"
+  }
+}
