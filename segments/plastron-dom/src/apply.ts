@@ -279,7 +279,7 @@ const applyEventDelta = (
   else reg.delete(el);
 };
 
-const makeListener = (
+export const makeListener = (
   binding: EventBinding,
   state: State,
   setFn: Fn | undefined,
