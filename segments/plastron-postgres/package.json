@@ -1,0 +1,18 @@
+{
+  "name": "plastron-postgres",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Node-side postgres adapter for plastron `.甲` archives — load/save zip blobs to/from a postgres table. Thin wrapper around plastron-archive.",
+  "main": "src/index.ts",
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "pg": "^8.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.2",
+    "typescript": "~5.9.3"
+  }
+}
