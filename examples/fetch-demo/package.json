@@ -1,0 +1,16 @@
+{
+  "name": "fetch-demo-example",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Walk through plastron-fetch — request cel + fetchJson lambda + extract field, with an offline error-as-value path.",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.2",
+    "tsx": "^4.19.2",
+    "typescript": "~5.9.3"
+  }
+}
