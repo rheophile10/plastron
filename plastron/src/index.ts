@@ -42,7 +42,7 @@ export const createInitialState = (): State => {
     schemas:         new Map(),
     schemaMetadata:  new Map(),
     tagRegistry:     new Map(),
-    kindRegistry:    new Map(),
+    fnDispose:       new Map(),
     channelRegistry: new Map(),
   };
 };

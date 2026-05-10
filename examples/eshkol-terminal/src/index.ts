@@ -4,7 +4,7 @@
 // Hydrates a small reactive graph whose lambda cels run Eshkol code
 // through the bytecode VM (eshkol-vm.wasm). Demonstrates:
 //
-//   • plastron-eshkol's kindRegistry handler
+//   • plastron-eshkol's compiler registered at state.fns.get("eshkol")
 //   • Inputs marshaled into Scheme `let` bindings
 //   • A formula cel feeding two Eshkol cels
 //   • Automatic differentiation in WASM (∂(x²)/∂x at a chosen x)
@@ -19,7 +19,7 @@ import { dirname, resolve } from "node:path";
 import type { Fn, Segment, State } from "../../../plastron/src/index.js";
 import { createInitialState } from "../../../plastron/src/index.js";
 import {
-  createEshkolKind,
+  createEshkolCompiler,
   createOutputCapture,
   type EshkolVMModule,
 } from "../../../segments/plastron-eshkol/src/index.js";
@@ -59,12 +59,12 @@ console.log(`[smoke] (display (+ 1 2 3)) → ${capture.read().trim()}`);
 //   • cel "derivAtX"     — Eshkol cel that evaluates the AD primitive
 //                          (display (derivative (lambda (t) (* t t)) x))
 //
-// Each cel's metadata declares kind: "eshkol" so hydrate dispatches
-// through plastron-eshkol's kind handler.
+// Each lambda's metadata declares kind: "eshkol" so hydrate auto-
+// compiles the source via the compiler registered at state.fns.get("eshkol").
 // ============================================================================
 
 const state = createInitialState();
-state.kindRegistry.set("eshkol", createEshkolKind({
+state.fns.set("eshkol", createEshkolCompiler({
   vm,
   resetOutput: capture.reset,
   readOutput:  capture.read,

@@ -20,34 +20,28 @@
 import type { z } from "zod";
 import type { Cel, DehydratedCel } from "./cels.js";
 import type { ChannelKey, ChannelHandler } from "./channels.js";
-import type { Fn, KindKey, LambdaKey, LambdaMetadata } from "./lambdas.js";
+import type { Fn, LambdaKey, LambdaMetadata } from "./lambdas.js";
 import type { SchemaKey, SchemaMetadata } from "./schemas.js";
 import type { TagKey, TagHandler } from "./tags.js";
 
 export type Key = string;
 
 // ============================================================================
-// KindHandler — pluggable lambda compilers for non-native kinds.
+// Lambda registration model
 //
-// "native" lambdas are bare JS Fns in state.fns; runCascade calls them
-// directly. For other kinds (formula, python, sqlite, scheme, …) the
-// host registers a handler in state.kindRegistry. At hydrate, every
-// cel whose lambda metadata has `kind: "<non-native>"` is compiled
-// once via the matching handler — the result populates cel._fn (used
-// by runCascade in preference to the registry lookup) and optionally
-// cel._dispose (fired on overwrite / future flush).
+// All lambdas — whether native JS bodies or source-compiled (formula,
+// python, scheme, wasm, …) — live as Fns in state.fns. There is no
+// parallel "kind handler" registry. Compilers are themselves Fns,
+// keyed by the language they accept (state.fns.get("f"),
+// state.fns.get("py"), …); they consume source strings and return
+// runtime bodies. See types/lambdas.ts for Compiler / CompiledLambda.
 //
-// `compile` is synchronous. Async setup belongs inside the returned
-// fn (lazy on first call), keeping hydrate itself sync.
+// At hydrate, cels with cel.f set are compiled by looking up the
+// compiler at state.fns.get(cel.l ?? "f") and applying it to cel.f.
+// Lambdas declared via segment.fnMetaData with both `source` and
+// `kind` populated are auto-compiled by hydrate (compiler resolved
+// from state.fns.get(meta.kind)) and registered into state.fns.
 // ============================================================================
-
-export interface KindHandler {
-  compile: (args: {
-    cel: Cel;
-    meta: LambdaMetadata;
-    state: State;
-  }) => { fn: Fn; dispose?: () => void };
-}
 
 export interface Segment {
   key: Key;
@@ -66,12 +60,15 @@ export interface State {
   /** Per-format protocols for opaque values. Tag handlers don't
    *  round-trip through JSON — host code installs them at runtime. */
   tagRegistry: Map<TagKey, TagHandler>;
-  /** Pluggable lambda compilers, keyed by kind. Like tag handlers,
-   *  these don't round-trip — host code installs them at runtime. */
-  kindRegistry: Map<KindKey, KindHandler>;
+  /** Runtime cleanup hooks for registered fns. Populated when a
+   *  compiler returns the {fn, dispose} envelope (a WASM instance, a
+   *  worker, an FFI handle, …). Fired when the entry is overwritten
+   *  via registerLambda or replaced at hydrate. Not serialized —
+   *  parallel to state.fns, lives only at runtime. */
+  fnDispose: Map<LambdaKey, () => void>;
   /** Pluggable side-effect outputs, keyed by channel name. runCascade
    *  enqueues changed cels onto their bound channels; channels own
-   *  scheduling + commit. Like tag/kind handlers, these don't round-trip. */
+   *  scheduling + commit. Like tag handlers, these don't round-trip. */
   channelRegistry: Map<ChannelKey, ChannelHandler>;
 }
 
@@ -88,8 +85,83 @@ export type Hydrate = (
  *  brands. */
 export type Dehydrate = (state: State) => Segment[];
 
+// ============================================================================
+// Cel triple — the per-cel update payload used by getCel / setCel and
+// their batch variants.
+//
+// Read shape: returned with whichever of {v, f, l} is present on the
+// cel. v is always present (defaults to null). f and l are absent when
+// the cel doesn't use them.
+//
+// Write shape (setCel / setCelBatch):
+//   • field absent / undefined  — leave the slot alone
+//   • field === null            — clear the slot (cel.f, cel.l)
+//   • field === concrete value  — install
+// Distinguishing "absent" from "null" requires `"f" in triple` checks
+// at the call site. Setting f or l triggers re-compilation; setting v
+// alone is the fast value-write path. setCel/setCelBatch are atomic:
+// either every requested mutation applies or none does (lock and
+// compute-path checks happen before any state mutation).
+// ============================================================================
+
+export interface CelTriple {
+  v?: unknown;
+  f?: string | null;
+  l?: LambdaKey | null;
+}
+
+// ============================================================================
+// registerLambda — runtime lambda registration. Adds a fn (or compiles
+// one from source) into state.fns, installs metadata into
+// state.fnMetadata, and optionally registers companion schemas in the
+// same call. Either `fn` or `source` (with `kind` selecting the
+// compiler) must be provided — not both.
+//
+// Atomicity: all pre-flight checks (lock, fn xor source, compiler
+// resolution, compilation) run before any state mutation. A failing
+// registerLambda leaves state untouched.
+// ============================================================================
+
+export interface RegisterLambdaArgs {
+  /** Registry key. Mirrors LambdaMetadata.key. */
+  key: LambdaKey;
+
+  // ── Body — exactly one of {fn, source} ──
+  /** Native JS body. */
+  fn?: Fn;
+  /** Source string for compilation. Compiler is resolved as
+   *  state.fns.get(kind ?? "f"). */
+  source?: string;
+  /** Names the compiler in state.fns when source is set. Also stored
+   *  on LambdaMetadata.kind for descriptive/tooling purposes. */
+  kind?: string;
+
+  // ── Companion metadata fields stored on LambdaMetadata ──
+  inputSchema?: SchemaKey;
+  outputSchema?: SchemaKey;
+  /** Positional arity — enforced by formula compilers for exact arg-count match. */
+  arity?: number;
+  /** Compiler-shaped fns may carry an extractDeps companion for auto-wiring. */
+  extractDeps?: (source: string) => Key[];
+  /** Optional dispose hook for fns that own runtime resources. Fires
+   *  on overwrite or kernel-side replacement. Compiler-supplied
+   *  dispose (from {fn, dispose} return) takes precedence over this. */
+  dispose?: () => void;
+  /** When true, refuses overwrite at later registerLambda / hydrate. */
+  locked?: boolean;
+
+  // ── Inline schema registration ──
+  /** Schemas to install into state.schemas before the fn is wired in.
+   *  Useful when the lambda references a schema the host hasn't yet
+   *  registered. Pass live Zod validators, not JSON Schema. */
+  schemas?: Record<SchemaKey, z.ZodType>;
+  /** Schema metadata to install into state.schemaMetadata. Same shape
+   *  as Segment.schemaMetadata. */
+  schemaMetadata?: Record<SchemaKey, SchemaMetadata>;
+}
+
 export type { Cel, DehydratedCel } from "./cels.js";
 export type { ChannelKey, ChannelHandler, ChannelEnqueue } from "./channels.js";
-export type { Fn, KindKey, LambdaKey, LambdaMetadata } from "./lambdas.js";
+export type { Fn, LambdaKey, LambdaMetadata, Compiler, CompiledLambda } from "./lambdas.js";
 export type { SchemaKey, SchemaMetadata, DehydrateSchemas, HydrateSchemas } from "./schemas.js";
 export type { TagKey, TagHandler } from "./tags.js";

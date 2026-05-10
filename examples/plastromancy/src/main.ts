@@ -22,7 +22,7 @@ import {
 } from "../../../segments/plastron-dom/src/index.js";
 import { rulesSegment, sessionSegment } from "./segments.js";
 import { chiselFns } from "./lambdas.js";
-import { augurKind } from "./kind.js";
+import { augurCompiler } from "./kind.js";
 import {
   crackSchema, CRACK_SCHEMA_KEY, CRACK_IS_CHANGED_KEY,
 } from "./schemas.js";
@@ -39,7 +39,7 @@ const installShellEnvironment = (state: State): void => {
     key:       CRACK_SCHEMA_KEY,
     isChanged: CRACK_IS_CHANGED_KEY,
   });
-  state.kindRegistry.set("augur", augurKind);
+  state.fns.set("augur", augurCompiler);
 };
 
 const state = createInitialState();

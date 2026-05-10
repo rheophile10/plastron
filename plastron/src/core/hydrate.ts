@@ -1,10 +1,45 @@
 import { z } from "zod";
 import type {
-  Cel, DehydratedCel, Dehydrate, DehydrateSchemas, Fn, Hydrate,
+  Cel, Compiler, DehydratedCel, Dehydrate, DehydrateSchemas, Fn, Hydrate,
   HydrateSchemas, Key, LambdaKey, LambdaMetadata, SchemaKey,
   Segment, TagHandler, TagKey,
 } from "../types/index.js";
 import { precompute } from "./precompute.js";
+
+// Compile a cel's source body (cel.f) via the compiler at
+// state.fns.get(cel.l ?? "f"). Sets cel._fn, cel._dispose, and
+// auto-wires cel.inputMap from the compiler's extractDeps if present.
+// Stamps cel.l with the resolved compiler key so the cel reads
+// consistently after hydrate. No-op when cel.f is unset.
+//
+// Throws if no compiler is registered at the resolved key — cels
+// that ship with source MUST have their compiler available before
+// hydrate inflates them.
+export const compileCelBody = (cel: Cel, fns: Map<LambdaKey, Fn>): void => {
+  if (cel.f === undefined) return;
+  const compilerKey = cel.l ?? "f";
+  const compiler = fns.get(compilerKey) as Compiler | undefined;
+  if (!compiler) {
+    throw new Error(
+      `Cel "${cel.key}" has source but no compiler is registered at ` +
+      `state.fns key "${compilerKey}".`,
+    );
+  }
+  const compiled = compiler(cel.f);
+  if (typeof compiled === "function") {
+    cel._fn = compiled;
+  } else {
+    cel._fn = compiled.fn;
+    if (compiled.dispose) cel._dispose = compiled.dispose;
+  }
+  cel.l = compilerKey;
+  cel.inputMap = cel.inputMap ?? {};
+  if (compiler.extractDeps) {
+    for (const dep of compiler.extractDeps(cel.f)) {
+      if (!(dep in cel.inputMap)) cel.inputMap[dep] = dep;
+    }
+  }
+};
 
 // Cel teardown — fire any installed _dispose hook then release the
 // held value via the tag handler. Errors are swallowed so a single
@@ -64,7 +99,7 @@ export const releaseValue = (
 const inflate = (
   dc: DehydratedCel,
   schemas: Map<SchemaKey, z.ZodType>,
-  formulaFn: Fn | undefined,
+  fns: Map<LambdaKey, Fn>,
 ): Cel => {
   const cel: Cel = { key: dc.key, v: dc.v ?? null };
   if (dc.l        !== undefined) cel.l        = dc.l;
@@ -80,24 +115,8 @@ const inflate = (
   if (dc.tag      !== undefined) cel.tag      = dc.tag;
   if (dc.channel  !== undefined) cel.channel  = dc.channel;
   if (dc.f        !== undefined) {
-    if (dc.l !== undefined && dc.l !== "f") {
-      throw new Error(`Cel "${dc.key}" has both .f and .l — they're mutually exclusive.`);
-    }
-    if (!formulaFn) {
-      throw new Error(
-        `Cel "${dc.key}" has .f but no formula compiler is registered at fns key "f".`,
-      );
-    }
     cel.f = dc.f;
-    cel._fn = formulaFn(dc.f) as Fn;
-    cel.l = "f";
-    cel.inputMap = cel.inputMap ?? {};
-    const deps = formulaFn.extractDeps;
-    if (deps) {
-      for (const dep of deps(dc.f)) {
-        if (!(dep in cel.inputMap)) cel.inputMap[dep] = dep;
-      }
-    }
+    compileCelBody(cel, fns);
   }
   return cel;
 };
@@ -249,43 +268,41 @@ export const hydrate: Hydrate = (state, segments, fns) => {
     }
   }
 
-  const formulaFn = state.fns.get("f");
+  // Auto-compile shared-body lambdas declared via segment.fnMetaData
+  // with both `source` and `kind` populated. Runs BEFORE cel inflation
+  // so that cels referencing these lambdas via cel.l (no per-cel cel.f)
+  // find them already registered in state.fns. Idempotent: skips
+  // entries already installed in state.fns. Throws when a kind names a
+  // compiler that isn't registered — surface the missing dependency at
+  // hydrate rather than at first cascade.
+  for (const [key, meta] of state.fnMetadata) {
+    if (state.fns.has(key)) continue;
+    if (!meta.source || !meta.kind || meta.kind === "native") continue;
+    const compiler = state.fns.get(meta.kind) as Compiler | undefined;
+    if (!compiler) {
+      throw new Error(
+        `Lambda "${key}" has kind "${meta.kind}" with source, but no ` +
+        `compiler is registered at state.fns key "${meta.kind}".`,
+      );
+    }
+    const compiled = compiler(meta.source);
+    if (typeof compiled === "function") {
+      state.fns.set(key, compiled);
+    } else {
+      state.fns.set(key, compiled.fn);
+      if (compiled.dispose) state.fnDispose.set(key, compiled.dispose);
+    }
+  }
 
   // Pass 2 — inflate cels with the final fn registry and schema set.
+  // compileCelBody handles per-cel cel.f compilation inside inflate.
   for (const seg of segments) {
     for (const dc of seg.cels) {
       const existing = state.cels.get(dc.key);
       if (existing?.locked) continue;
       if (existing) disposeCel(existing, state.tagRegistry);
-      state.cels.set(dc.key, inflate(dc, state.schemas, formulaFn));
+      state.cels.set(dc.key, inflate(dc, state.schemas, state.fns));
     }
-  }
-
-  // Compile non-native kind lambdas via state.kindRegistry. Runs after
-  // fns + fnMetadata are installed and after cels are inflated. Skips
-  // cels that already have a cel._fn (e.g. formulas, compiled by
-  // inflate). Throws if a cel needs a kind whose handler isn't
-  // registered. Re-runs of hydrate fire any existing cel._dispose
-  // before installing the new compilation.
-  for (const cel of state.cels.values()) {
-    if (!cel.l) continue;
-    if (cel._fn) continue;
-    const meta = state.fnMetadata.get(cel.l);
-    if (!meta?.kind || meta.kind === "native") continue;
-    const handler = state.kindRegistry.get(meta.kind);
-    if (!handler) {
-      throw new Error(
-        `Cel "${cel.key}" uses lambda "${cel.l}" with kind "${meta.kind}" ` +
-        `but no handler is registered in state.kindRegistry.`,
-      );
-    }
-    if (cel._dispose) {
-      try { cel._dispose(); } catch { /* swallow */ }
-      cel._dispose = undefined;
-    }
-    const compiled = handler.compile({ cel, meta, state });
-    cel._fn = compiled.fn;
-    if (compiled.dispose) cel._dispose = compiled.dispose;
   }
 
   // Materialize cel._isChanged and cel._diffFn from schemaMetadata.

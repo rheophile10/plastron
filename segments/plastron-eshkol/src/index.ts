@@ -1,20 +1,22 @@
-import type { Fn, KindHandler } from "../../../plastron/src/index.js";
+import type { Compiler, Fn } from "../../../plastron/src/index.js";
 
 // ============================================================================
-// plastron-eshkol — Eshkol kind handler.
+// plastron-eshkol — Eshkol compiler for plastron.
 //
 // Hosts the Eshkol bytecode VM (a 63-opcode Scheme runtime, compiled
-// to WASM via Emscripten) as a plastron lambda kind. A cel's lambda
-// metadata declares `kind: "eshkol"` and ships its Scheme source in
-// `metadata.source`; at hydrate the kind handler returns a fn that
-// evaluates that source against the cel's resolved inputs.
+// to WASM via Emscripten) as a plastron compiler. Cels declare
+// `cel.l = "eshkol"` and ship their Scheme source in `cel.f`; at
+// hydrate the compiler at state.fns.get("eshkol") turns the source
+// into a runtime fn that evaluates against the cel's resolved inputs.
+// The same compiler also handles segment-level lambdas declared via
+// fnMetaData with `kind: "eshkol"` and `source: "<scheme>"`.
 //
 // Calling convention:
 //   • Inputs are bound via Scheme `let`, so a cel with inputMap
 //     `{ x: "heat", y: "thickness" }` evaluates as
 //     `(let ((x <heat>) (y <thickness>)) <source>)`.
 //   • The user's source is expected to call `(display ...)` to emit
-//     its result. The kind handler captures Emscripten stdout, trims
+//     its result. The compiler captures Emscripten stdout, trims
 //     it, and returns the parsed value (number / boolean / string).
 //   • The VM's session is global — state defined with top-level
 //     `define` outside a `let` will leak across cels, so prefer
@@ -24,7 +26,7 @@ import type { Fn, KindHandler } from "../../../plastron/src/index.js";
 // Loading the VM is the host's responsibility:
 //   import EshkolVM from "<eshkol>/site/static/eshkol-vm.js";
 //   const vm = await EshkolVM({ print, printErr });
-//   state.kindRegistry.set("eshkol", createEshkolKind(vm));
+//   state.fns.set("eshkol", createEshkolCompiler({ vm, resetOutput, readOutput }));
 //
 // In Node, eshkol-vm.js is a CJS module (Emscripten MODULARIZE=1).
 // Use `createRequire` from "node:module" if your example is ESM.
@@ -84,34 +86,33 @@ const fromEshkolOutput = (s: string): unknown => {
   return t;
 };
 
-/** Build the kind handler. The same handler is shared across every
- *  eshkol-kind cel; per-cel state goes into the closure inside
- *  `compile`. */
-export const createEshkolKind = (opts: EshkolKindOptions): KindHandler => {
+/** Build the Eshkol compiler. Returned fn matches the plastron
+ *  Compiler shape: it accepts a Scheme source string and returns a
+ *  runtime Fn that evaluates that source against the cel's inputs.
+ *  Register at `state.fns.set("eshkol", compiler)` — works for both
+ *  per-cel cel.f source and segment-level shared bodies declared via
+ *  fnMetaData with `kind: "eshkol"` and `source: "..."`. */
+export const createEshkolCompiler = (opts: EshkolKindOptions): Compiler => {
   const { vm, resetOutput, readOutput } = opts;
   const evalFn = vm.cwrap("repl_eval", "string", ["string"]) as (src: string) => string;
 
-  return {
-    compile: ({ meta }) => {
-      const source = meta.source ?? "";
+  const compiler: Compiler = (source: string) => {
+    const fn: Fn = (inputs: Record<string, unknown>) => {
+      const entries = Object.entries(inputs ?? {});
+      const bindings = entries
+        .map(([k, v]) => `(${k} ${toEshkol(v)})`)
+        .join(" ");
+      const wrapped = bindings.length > 0
+        ? `(let (${bindings}) ${source})`
+        : source;
 
-      const fn: Fn = (inputs: Record<string, unknown>) => {
-        const entries = Object.entries(inputs ?? {});
-        const bindings = entries
-          .map(([k, v]) => `(${k} ${toEshkol(v)})`)
-          .join(" ");
-        const wrapped = bindings.length > 0
-          ? `(let (${bindings}) ${source})`
-          : source;
-
-        resetOutput();
-        evalFn(wrapped);
-        return fromEshkolOutput(readOutput());
-      };
-
-      return { fn };
-    },
+      resetOutput();
+      evalFn(wrapped);
+      return fromEshkolOutput(readOutput());
+    };
+    return fn;
   };
+  return compiler;
 };
 
 // Helper consumers can use to wire up Module print capture cleanly.

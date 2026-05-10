@@ -2,7 +2,6 @@ import type { Key } from "./index.js";
 import type { SchemaKey } from "./schemas.js";
 
 export type LambdaKey = Key;
-export type KindKey = Key;
 
 // Variadic so the registry accepts both `(input) => …` style fns
 // (runCycle, hydrate-ish wrappers) and positional ones (get, set,
@@ -11,9 +10,28 @@ export type KindKey = Key;
 // dispatch is dynamic, so registry assignability has to allow it.
 export interface Fn<_I = unknown, O = unknown> {
   (...args: any[]): O | Promise<O>;
-  /** Only the formula-parser fn carries this. Returns the cel keys a
-   *  formula string references; used by hydrate to auto-wire inputMap. */
-  extractDeps?: (formula: string) => Key[];
+  /** Compiler-shaped fns may carry this. Returns the cel keys a
+   *  source string references; used by hydrate / setCel to auto-wire
+   *  inputMap on cels with cel.f. */
+  extractDeps?: (source: string) => Key[];
+}
+
+// ============================================================================
+// Compiler convention — any fn registered in state.fns under a key like
+// "f", "py", "scheme", "wasm", … that consumes a source string and
+// returns a runtime body. Cels with cel.f set look up their compiler at
+// state.fns.get(cel.l ?? "f"); the result populates cel._fn.
+//
+// A compiler may return either a bare Fn (the runtime body) or an
+// envelope { fn, dispose? } — the dispose hook fires when the cel is
+// overwritten, removed, or the registry entry is replaced.
+// ============================================================================
+
+export type CompiledLambda = Fn | { fn: Fn; dispose?: () => void };
+
+export interface Compiler extends Fn {
+  (source: string): CompiledLambda;
+  extractDeps?: (source: string) => Key[];
 }
 
 /** Static description of a lambda — kind, schemas, source, etc.

@@ -8,7 +8,15 @@ import type { TagKey } from "./tags.js";
 export interface Cel {
   key: Key;
   v: unknown;
-  /** Key of the fn in state.fns. Presence makes this cel "computed". */
+  /** Key of the lambda OR compiler in state.fns. Presence makes this
+   *  cel "computed". Two regimes:
+   *   • cel.f unset — cel.l names a runtime fn. runCascade calls
+   *     state.fns.get(cel.l) directly with the cel's inputs.
+   *   • cel.f set   — cel.l names the compiler that turns cel.f source
+   *     into cel._fn at hydrate (state.fns.get(cel.l)(cel.f)). When
+   *     cel.f is set without cel.l, hydrate defaults cel.l to "f".
+   *  The cel.l value doubles as the "kind" tag for tooling/UI; no
+   *  separate kind field is needed on the cel itself. */
   l?: LambdaKey;
   /** Named inputs → upstream cel keys (or arrays of keys). */
   inputMap?: Record<string, Key | Key[]>;
@@ -23,10 +31,10 @@ export interface Cel {
    *  its downstream closure) regardless of whether its inputs changed.
    *  Use for clocks, random sources, externally-driven values. */
   dynamic?: boolean;
-  /** Formula source. When set, hydrate compiles it into cel._fn,
-   *  auto-wires inputMap from the formula's referenced identifiers,
-   *  and stamps cel.l = "f". Mutually exclusive with cel.l declared
-   *  by the user. */
+  /** Source string. When set, hydrate compiles it into cel._fn via
+   *  state.fns.get(cel.l ?? "f")(cel.f) and auto-wires inputMap from
+   *  the compiler's extractDeps if present. Coexists with cel.l —
+   *  cel.l names which compiler ("f", "py", "scheme", "wasm", …). */
   f?: string;
   /** Format tag identifying the value's protocol. When set,
    *  state.tagRegistry[tag] supplies comparator / serialize / release

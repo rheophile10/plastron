@@ -1,6 +1,9 @@
-import type { ChannelHandler, ChannelKey, Fn, Key, State } from "../types/index.js";
-import { PRECOMPUTED_STATES_KEY, type PrecomputedIndexes } from "./precompute.js";
-import { releaseValue } from "./hydrate.js";
+import type {
+  Cel, CelTriple, ChannelHandler, ChannelKey, Compiler, Fn, Key,
+  LambdaMetadata, RegisterLambdaArgs, State,
+} from "../types/index.js";
+import { PRECOMPUTED_STATES_KEY, precompute, type PrecomputedIndexes } from "./precompute.js";
+import { compileCelBody, releaseValue } from "./hydrate.js";
 import { affectedFor, runCascade } from "./runCycle.js";
 
 // ----------------------------------------------------------------------------
@@ -136,6 +139,230 @@ export const batch: Fn = async (
   for (const [k, v] of writes) writeOne(state, k, v);
   await runCascade(state, affectedFor(state, writtenKeys), new Set(writtenKeys));
   if (opts?.flush) await flushChannels(state, opts.flush);
+  return state;
+};
+
+// ============================================================================
+// Complete-tier reads/writes — operate on the full {v, f, l} triple.
+//
+// Use cases: serialization, undo/redo, UI sync that pushes a cel's
+// full state from a server payload, or any flow that needs to swap
+// formula/lambda alongside (or instead of) the value. The fast tier
+// (get/set/batch above) stays unchanged for hot loops.
+//
+// setCel / setCelBatch are atomic: pre-flight checks (lock, fn xor
+// source, compiler resolution, compilation) happen before any state
+// mutation. A failing setCel leaves the cel exactly as it was.
+//
+// Setting f or l requires re-compilation and re-runs precompute (the
+// dep set may have shifted, which moves cels between waves /
+// downstream sets). setCelBatch precomputes once at the end if any
+// cel's topology shifted; setCel precomputes for every f/l change.
+// ============================================================================
+
+interface ApplyResult { topoChanged: boolean; }
+
+/** Mutate a single cel's {v, f, l} slots atomically. Pre-flight runs
+ *  before any write so a thrown error leaves the cel intact. Returns
+ *  whether the topology may have shifted (setCelBatch uses this to
+ *  decide whether to re-run precompute once at the end). */
+const applyTripleAtomic = (
+  state: State, key: Key, triple: CelTriple,
+): ApplyResult => {
+  const cel = state.cels.get(key);
+  if (!cel)       throw new Error(`setCel: unknown cel "${key}"`);
+  if (cel.locked) throw new Error(`setCel: cel "${key}" is locked`);
+
+  const fInTriple = "f" in triple;
+  const lInTriple = "l" in triple;
+  const vInTriple = "v" in triple;
+
+  // Resolve the post-update f/l values. null means clear; undefined
+  // (i.e. field absent) means leave alone.
+  const newF = fInTriple ? triple.f : cel.f;
+  const newL = lInTriple ? triple.l : cel.l;
+  const willHaveSource = newF != null;
+
+  // Pre-flight: resolve compiler before mutating. Missing compiler
+  // aborts with the cel still in its original state.
+  let compiler: Compiler | undefined;
+  if (willHaveSource) {
+    const ck = newL ?? "f";
+    compiler = state.fns.get(ck) as Compiler | undefined;
+    if (!compiler) {
+      throw new Error(`setCel: no compiler at "${ck}" for cel "${key}"`);
+    }
+  }
+
+  // Reject "set v on a cel that still has a compute path." A lambda
+  // cel's v is derived. The only legal pattern is to remove the
+  // compute path in the same triple (l: null + f: null + v: 42).
+  if (vInTriple) {
+    const willHaveCompute =
+      (willHaveSource) ||
+      (lInTriple ? newL != null : cel.l !== undefined);
+    if (willHaveCompute) {
+      throw new Error(
+        `setCel: cannot set v on "${key}" — has a compute path. ` +
+        `Clear l/f in the same triple to convert into a value cel.`,
+      );
+    }
+  }
+
+  // Mutate. From here, the cel is dirty until we finish.
+  let topoChanged = false;
+  if (fInTriple || lInTriple) {
+    if (cel._dispose) { try { cel._dispose(); } catch { /* swallow */ } }
+    cel._dispose = undefined;
+    cel._fn = undefined;
+    if (willHaveSource) {
+      cel.f = newF as string;
+      cel.l = newL ?? "f";
+      compileCelBody(cel, state.fns);
+      topoChanged = true;
+    } else {
+      // Source cleared (newF === null). Cel reverts toward bodyless.
+      if (fInTriple) cel.f = undefined;
+      if (lInTriple) cel.l = newL == null ? undefined : newL;
+      if (lInTriple || fInTriple) topoChanged = true;
+    }
+  }
+  if (vInTriple) {
+    releaseValue(cel.v, cel.tag, state.tagRegistry);
+    cel.v = triple.v;
+  }
+  return { topoChanged };
+};
+
+const readTriple = (cel: Cel): CelTriple => {
+  const out: CelTriple = { v: cel.v };
+  if (cel.f !== undefined) out.f = cel.f;
+  if (cel.l !== undefined) out.l = cel.l;
+  return out;
+};
+
+export const getCel: Fn = (state: State, key: Key): CelTriple | undefined => {
+  const cel = state.cels.get(key);
+  return cel ? readTriple(cel) : undefined;
+};
+
+export const getCelBatch: Fn = (
+  state: State, keys: Key[],
+): Record<Key, CelTriple> => {
+  const out: Record<Key, CelTriple> = {};
+  for (const k of keys) {
+    const cel = state.cels.get(k);
+    if (cel) out[k] = readTriple(cel);
+  }
+  return out;
+};
+
+export const setCel: Fn = async (
+  state: State, key: Key, triple: CelTriple, opts?: SetOpts,
+) => {
+  const { topoChanged } = applyTripleAtomic(state, key, triple);
+  if (topoChanged) precompute(state);
+  await runCascade(state, affectedFor(state, [key]), new Set([key]));
+  if (opts?.flush) await flushChannels(state, opts.flush);
+  return state;
+};
+
+export const setCelBatch: Fn = async (
+  state: State, writes: Record<Key, CelTriple>, opts?: SetOpts,
+) => {
+  const keys = Object.keys(writes);
+  if (keys.length === 0) return state;
+  let topoChanged = false;
+  for (const key of keys) {
+    const result = applyTripleAtomic(state, key, writes[key]);
+    if (result.topoChanged) topoChanged = true;
+  }
+  if (topoChanged) precompute(state);
+  await runCascade(state, affectedFor(state, keys), new Set(keys));
+  if (opts?.flush) await flushChannels(state, opts.flush);
+  return state;
+};
+
+// ============================================================================
+// registerLambda — runtime lambda registration. Adds a fn (or compiles
+// one from source) into state.fns + state.fnMetadata, and optionally
+// installs companion schemas/schemaMetadata in the same call.
+//
+// Atomicity: pre-flight (lock, fn xor source, compiler resolution,
+// compilation) runs before any state mutation. A failing
+// registerLambda leaves state untouched.
+//
+// Dispose: a previously-registered fn at the same key has its
+// state.fnDispose entry fired (if any) before installation. The new
+// dispose comes from the compiler's {fn, dispose} envelope (if used)
+// or from args.dispose; compiler-supplied wins.
+//
+// Schemas: when args.schemas is set, schemas install before the fn,
+// so an inputSchema/outputSchema reference into the same call is
+// already resolvable.
+// ============================================================================
+
+export const registerLambda: Fn = (state: State, args: RegisterLambdaArgs) => {
+  // ── Pre-flight ─────────────────────────────────────────────────────────
+  if (args.fn !== undefined && args.source !== undefined) {
+    throw new Error(`registerLambda: "${args.key}" provides both fn and source.`);
+  }
+  if (args.fn === undefined && args.source === undefined) {
+    throw new Error(`registerLambda: "${args.key}" needs either fn or source.`);
+  }
+  if (state.fnMetadata.get(args.key)?.locked && state.fns.has(args.key)) {
+    throw new Error(`registerLambda: "${args.key}" is locked.`);
+  }
+
+  let runtime: Fn;
+  let dispose: (() => void) | undefined = args.dispose;
+  if (args.fn) {
+    runtime = args.fn;
+  } else {
+    const compilerKey = args.kind ?? "f";
+    const compiler = state.fns.get(compilerKey) as Compiler | undefined;
+    if (!compiler) {
+      throw new Error(
+        `registerLambda: "${args.key}" needs compiler at "${compilerKey}", not registered.`,
+      );
+    }
+    const compiled = compiler(args.source!);
+    if (typeof compiled === "function") {
+      runtime = compiled;
+    } else {
+      runtime = compiled.fn;
+      if (compiled.dispose) dispose = compiled.dispose; // compiler wins
+    }
+  }
+  if (args.extractDeps) (runtime as Fn).extractDeps = args.extractDeps;
+
+  // ── Commit ─────────────────────────────────────────────────────────────
+  if (args.schemas) {
+    for (const [k, zod] of Object.entries(args.schemas)) state.schemas.set(k, zod);
+  }
+  if (args.schemaMetadata) {
+    for (const [k, meta] of Object.entries(args.schemaMetadata)) {
+      state.schemaMetadata.set(k, { ...meta, key: k });
+    }
+  }
+
+  const prevDispose = state.fnDispose.get(args.key);
+  if (prevDispose) {
+    try { prevDispose(); } catch { /* swallow */ }
+    state.fnDispose.delete(args.key);
+  }
+
+  state.fns.set(args.key, runtime);
+  const meta: LambdaMetadata = { key: args.key };
+  if (args.kind         !== undefined) meta.kind         = args.kind;
+  if (args.inputSchema  !== undefined) meta.inputSchema  = args.inputSchema;
+  if (args.outputSchema !== undefined) meta.outputSchema = args.outputSchema;
+  if (args.arity        !== undefined) meta.arity        = args.arity;
+  if (args.source       !== undefined) meta.source       = args.source;
+  if (args.locked       !== undefined) meta.locked       = args.locked;
+  state.fnMetadata.set(args.key, meta);
+  if (dispose) state.fnDispose.set(args.key, dispose);
+
   return state;
 };
 
