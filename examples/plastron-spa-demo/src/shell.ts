@@ -3,18 +3,21 @@ import { el, type VNode } from "../../../segments/plastron-dom/src/index.js";
 import type { SegmentBundle } from "./segments/counter.js";
 
 // ========================================================================
-// Shell — nav menu + view slot.
+// Shell — nav links + view slot.
 //
 // The shell is hydrated alone at startup. counterTree and weatherTree
 // are referenced in inputMap but not yet present in state — that's
-// fine: the kernel's runCascade returns `undefined` for missing
-// inputMap targets, so the render lambda just shows a "loading" stub
-// for the active view until its segment is hydrated.
+// fine: the kernel returns `undefined` for missing inputMap targets,
+// so the render lambda just shows a "loading" stub for the active
+// view until plastron-routes lazy-loads the matching segment.
 //
-// Nav clicks dispatch `shell:navigateTo` rather than writing
-// currentView directly. The dispatcher (defined in main.ts) handles
-// "load the segment if not yet, then set currentView." It runs
-// outside the cycle, so it's free to call hydrate.
+// Nav uses plain `<a href="#/...">` anchors — clicks update
+// window.location.hash, the router's hashchange listener writes
+// route:hash, the route:match lambda recomputes, the loader channel
+// dynamically imports the segment and finally sets route:view.
+//
+// `view` is the active view key from route:view (set by the router
+// after loading completes).
 // ========================================================================
 
 const isVNode = (v: unknown): v is VNode =>
@@ -28,10 +31,10 @@ export const buildShellSegment = (): SegmentBundle => {
       weatherTree: unknown;
     },
   ): VNode => {
-    const navButton = (key: string, label: string): VNode =>
-      el("button", {
+    const navLink = (path: string, key: string, label: string): VNode =>
+      el("a", {
         class: view === key ? "active" : "",
-        onClick: { dispatch: "shell:navigateTo", payload: key },
+        href: `#${path}`,
       }, label);
 
     let main: VNode;
@@ -45,8 +48,8 @@ export const buildShellSegment = (): SegmentBundle => {
 
     return el("div", { class: "app" },
       el("nav", { class: "app-nav" },
-        navButton("counter", "Counter"),
-        navButton("weather", "Weather"),
+        navLink("/counter", "counter", "Counter"),
+        navLink("/weather", "weather", "Weather"),
       ),
       el("main", { class: "app-main" }, main),
     );
@@ -55,16 +58,18 @@ export const buildShellSegment = (): SegmentBundle => {
   const segment: Segment = {
     key: "shell",
     cels: [
-      { key: "currentView", v: "", segment: "shell" },
       {
         key: "appTree",
         l: "shell:renderShell",
         // counterTree / weatherTree may not exist when the shell
         // hydrates — the kernel tolerates phantom inputMap entries
-        // (returns undefined), and once a segment is lazily loaded
-        // its tree cel takes its place in the dependency graph.
+        // (returns undefined), and once the router lazy-loads a
+        // segment its tree cel takes its place. route:view is
+        // installed by installRouter; at first render before the
+        // router is installed it's also undefined, which the render
+        // lambda handles via the else branch.
         inputMap: {
-          view: "currentView",
+          view: "route:view",
           counterTree: "counterTree",
           weatherTree: "weatherTree",
         },

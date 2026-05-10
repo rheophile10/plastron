@@ -62,7 +62,8 @@ nav.app-nav {
   padding-bottom: 12px;
 }
 
-nav.app-nav button {
+nav.app-nav button,
+nav.app-nav a {
   font: inherit;
   padding: 8px 14px;
   border: 1px solid var(--rule);
@@ -70,6 +71,7 @@ nav.app-nav button {
   color: var(--muted);
   cursor: pointer;
   border-radius: 4px;
+  text-decoration: none;
   transition:
     background 0.18s ease,
     color      0.18s ease,
@@ -78,16 +80,19 @@ nav.app-nav button {
     box-shadow 0.18s ease;
 }
 
-nav.app-nav button:hover {
+nav.app-nav button:hover,
+nav.app-nav a:hover {
   color: var(--ink);
   border-color: var(--accent-soft);
 }
 
-nav.app-nav button:active {
+nav.app-nav button:active,
+nav.app-nav a:active {
   transform: translateY(1px);
 }
 
-nav.app-nav button.active {
+nav.app-nav button.active,
+nav.app-nav a.active {
   border-color: var(--accent);
   color: var(--accent);
   background: white;

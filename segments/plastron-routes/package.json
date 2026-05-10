@@ -1,0 +1,14 @@
+{
+  "name": "plastron-routes",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Hash-based URL router for plastron — declarative route table, derived match cel, lazy segment loading via channel handler.",
+  "main": "src/index.ts",
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}
