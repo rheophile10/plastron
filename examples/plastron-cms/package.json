@@ -1,0 +1,26 @@
+{
+  "name": "plastron-cms",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Example CMS app — articles as plastron States stored in SQLite, edited via plastron-sheet, rendered as pages (plastron-dom) or newsletters (plastron-mjml). Demonstrates the full segment composition.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "react": "^19.0.0",
+    "react-dom": "^19.0.0",
+    "@sqlite.org/sqlite-wasm": "^3.53.0-build1",
+    "mjml-browser": "^4.15.0",
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "@types/react": "^19.0.0",
+    "@types/react-dom": "^19.0.0",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "~5.9.3",
+    "vite": "^5.4.10"
+  }
+}
