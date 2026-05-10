@@ -1,0 +1,17 @@
+{
+  "name": "plastron-collections",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Helpers for packing scalar cels into dense typed-array structures (Column, Table, Matrix). Provides builder/view helpers, a starter operator lambda set, generation-counter isChanged, a buffer tag handler, and one-call installCollections.",
+  "main": "src/index.ts",
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}
