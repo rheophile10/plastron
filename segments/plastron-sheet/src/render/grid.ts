@@ -1,4 +1,4 @@
-import { el, type VNode } from "../../../../segments/plastron-dom/src/index.js";
+import { el, type VNode } from "../../../plastron-dom/src/index.js";
 import { COLS, ROWS, addressOf, colLetter, rectFor } from "../domain/address.js";
 import { displayValue } from "../domain/parse.js";
 import type { CopyMark } from "../actions/clipboard.js";

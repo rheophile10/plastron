@@ -34,18 +34,19 @@ in-place edit mode           "__sheet:editing"       primitive cel
 formula bar text source      "__sheet:sources"       Record<addr,string>
 ```
 
-The Excel-style infix parser (`=A1+B1*2`, `=(D7+D8)*0.1`) is in
-`src/formula.ts`. It's registered into `state.fns.get("f")` —
+The Excel-style infix parser (`=A1+B1*2`, `=(D7+D8)*0.1`) lives in
+the [`plastron-sheet` segment](../../segments/plastron-sheet/) at
+`src/formula.ts`. `installSheet` registers it into `state.fns.get("f")` —
 plastron's kernel picks any `f:` cel up via this fn at hydrate time,
 calls it on the source string, and stores the resulting `Fn` on
 `cel._fn`. The default kernel ships an S-expression compiler in this
-slot; we replace it with one keystroke in `main.ts`:
+slot; the segment swaps it during install.
 
-```ts
-hydrate(state, [], [new Map([["f", infixFormula]])]);
-```
-
-That's the whole story for "make plastron speak Excel."
+This example is now a thin shell: it constructs state, calls
+`installSheet(state)` (which hydrates the sheet's cels, lambdas, and
+document-level bridges), then mounts the sheet's tree cel via
+`installDom`. See `src/main.ts` — the whole bootstrap is under twenty
+lines.
 
 ## Edit commit pipeline
 
@@ -97,8 +98,9 @@ standard form-element gotcha.
 The copy-marquee (border around the source range after Cmd-C) is a
 single `<div class="copy-marquee">` rendered in the graph with
 `data-start` / `data-end` attributes, then sized imperatively in
-`main.ts` from the actual cell `getBoundingClientRect` values via a
-`MutationObserver`. Cell-relative measurement avoids hardcoding
+the segment's `bridges/marquee.ts` from the actual cell
+`getBoundingClientRect` values via a `MutationObserver`.
+Cell-relative measurement avoids hardcoding
 pixel widths that browsers don't honor when `table-layout: fixed`
 interacts with surrounding flex constraints.
 
