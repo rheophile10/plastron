@@ -1,0 +1,19 @@
+{
+  "name": "idb-persistence-demo",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Browser-only demo of plastron-idb — persistence channel, blob-handle tag, and segment snapshot/restore.",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.2",
+    "tsx": "^4.19.2",
+    "typescript": "~5.9.3"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  }
+}
