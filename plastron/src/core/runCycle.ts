@@ -99,20 +99,28 @@ const fireCel = (
     if (!shouldFire) return;
   }
 
-  const inputs: Record<string, unknown> = {};
-  if (cel._inputEntries) {
-    for (const [name, cs] of cel._inputEntries) {
-      if (cs === undefined) {
-        inputs[name] = undefined;
-      } else if (Array.isArray(cs)) {
-        inputs[name] = cs.map((c) => c?.v);
-      } else {
-        inputs[name] = cs.v;
+  // Fast path: compiler-supplied closure captures cels directly, so we
+  // skip the inputs-object allocation entirely. Built by precompute via
+  // cel._buildEvaluate; nothing to do here but call it.
+  let fnResult: unknown;
+  if (cel._evaluate) {
+    fnResult = cel._evaluate();
+  } else {
+    const inputs: Record<string, unknown> = {};
+    if (cel._inputEntries) {
+      for (const [name, cs] of cel._inputEntries) {
+        if (cs === undefined) {
+          inputs[name] = undefined;
+        } else if (Array.isArray(cs)) {
+          inputs[name] = cs.map((c) => c?.v);
+        } else {
+          inputs[name] = cs.v;
+        }
       }
     }
+    fnResult = fn(inputs);
   }
 
-  const fnResult = fn(inputs);
   if (fnResult instanceof Promise) {
     return fnResult.then((newV) => finishFire(state, cel, newV, suppression, changed));
   }

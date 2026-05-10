@@ -1,7 +1,7 @@
 import type { z } from "zod";
 import type { Key } from "./index.js";
 import type { ChannelHandler, ChannelKey } from "./channels.js";
-import type { Fn, LambdaKey } from "./lambdas.js";
+import type { Fn, LambdaKey, ResolvedInputs } from "./lambdas.js";
 import type { SchemaKey } from "./schemas.js";
 import type { TagKey } from "./tags.js";
 
@@ -88,6 +88,19 @@ export interface Cel {
    *  at precompute time are silently dropped — register channels
    *  before hydrating cels that reference them. */
   _channelHandlers?: ChannelHandler[];
+  /** Compiler-supplied closure builder, captured at compile time from
+   *  the CompiledEnvelope returned by the cel's compiler. precompute
+   *  invokes this with the resolved inputs to produce cel._evaluate.
+   *  Compilers that don't provide one leave this undefined; fireCel
+   *  then uses the standard gather-and-call path. */
+  _buildEvaluate?: (inputs: ResolvedInputs) => () => unknown;
+  /** Per-cel monomorphic closure that returns the cel's next value.
+   *  Built by precompute via cel._buildEvaluate(resolvedInputs); the
+   *  closure captures live cel refs directly, so calling it skips both
+   *  the inputs-object allocation and the registry-keyed fn lookup.
+   *  fireCel uses this when present and falls back to fn(inputs)
+   *  otherwise. Rebuilt on every precompute, like _inputEntries. */
+  _evaluate?: () => unknown;
 }
 
 /** On-disk / JSON shape. Identical to Cel except `v` is optional

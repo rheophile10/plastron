@@ -1,7 +1,18 @@
 import type { Key } from "./index.js";
+import type { Cel } from "./cels.js";
 import type { SchemaKey } from "./schemas.js";
 
 export type LambdaKey = Key;
+
+// ============================================================================
+// ResolvedInputs — inputMap resolved to live cel references, the shape
+// precompute hands to Compiler.buildEvaluate. Mirrors cel._inputEntries
+// content but keyed by name. Each value is either a single Cel, an
+// array of Cels, or undefined when the declared upstream key didn't
+// resolve at precompute time.
+// ============================================================================
+
+export type ResolvedInputs = Record<string, Cel | undefined | Array<Cel | undefined>>;
 
 // Variadic so the registry accepts both `(input) => …` style fns
 // (runCycle, hydrate-ish wrappers) and positional ones (get, set,
@@ -23,11 +34,29 @@ export interface Fn<_I = unknown, O = unknown> {
 // state.fns.get(cel.l ?? "f"); the result populates cel._fn.
 //
 // A compiler may return either a bare Fn (the runtime body) or an
-// envelope { fn, dispose? } — the dispose hook fires when the cel is
-// overwritten, removed, or the registry entry is replaced.
+// envelope { fn, dispose?, buildEvaluate? }.
+//
+//   • dispose       — fires when the cel is overwritten, removed, or
+//                     the registry entry is replaced.
+//   • buildEvaluate — optional fast-path closure builder. Receives the
+//                     resolved input cels (built by precompute alongside
+//                     cel._inputEntries) and returns a zero-argument
+//                     closure that the cascade calls in place of the
+//                     usual fn(inputs) call. Lets a compiler that knows
+//                     its dependency shape emit code that captures cel
+//                     refs directly and skips the per-fire input-object
+//                     allocation. Compilers that don't supply this are
+//                     unaffected — fireCel falls through to the standard
+//                     gather-and-call path.
 // ============================================================================
 
-export type CompiledLambda = Fn | { fn: Fn; dispose?: () => void };
+export interface CompiledEnvelope {
+  fn: Fn;
+  dispose?: () => void;
+  buildEvaluate?: (inputs: ResolvedInputs) => () => unknown;
+}
+
+export type CompiledLambda = Fn | CompiledEnvelope;
 
 export interface Compiler extends Fn {
   (source: string): CompiledLambda;

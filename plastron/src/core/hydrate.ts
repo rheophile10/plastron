@@ -32,6 +32,7 @@ export const compileCelBody = (cel: Cel, fns: Map<LambdaKey, Fn>): void => {
   } else {
     cel._fn = compiled.fn;
     if (compiled.dispose) cel._dispose = compiled.dispose;
+    if (compiled.buildEvaluate) cel._buildEvaluate = compiled.buildEvaluate;
   }
   cel.l = compilerKey;
   cel.inputMap = cel.inputMap ?? {};

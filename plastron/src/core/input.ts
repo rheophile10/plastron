@@ -215,6 +215,7 @@ const applyTripleAtomic = (
     if (cel._dispose) { try { cel._dispose(); } catch { /* swallow */ } }
     cel._dispose = undefined;
     cel._fn = undefined;
+    cel._buildEvaluate = undefined;
     if (willHaveSource) {
       cel.f = newF as string;
       cel.l = newL ?? "f";

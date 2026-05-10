@@ -1,4 +1,4 @@
-import type { Cel, Key, State } from "../types/index.js";
+import type { Cel, Key, ResolvedInputs, State } from "../types/index.js";
 
 // ============================================================================
 // precompute — derive the indexes runCycle and the input fns need,
@@ -25,8 +25,13 @@ import type { Cel, Key, State } from "../types/index.js";
 //
 // In addition to the indexes, precompute materializes per-cel runtime
 // caches:
-//   • cel._inputEntries  — inputMap resolved to direct cel refs
+//   • cel._inputEntries    — inputMap resolved to direct cel refs
 //   • cel._channelHandlers — cel.channel resolved to live handlers
+//   • cel._evaluate        — compiler-supplied closure, captures cels
+//                            directly so fireCel skips input-object
+//                            construction. Built only when the cel's
+//                            compiler attached a buildEvaluate hook
+//                            on its CompiledEnvelope.
 // These run last (after the index work) so they pick up the final cel
 // graph and the current state.channelRegistry.
 // ============================================================================
@@ -68,6 +73,7 @@ export const precompute = (state: State): void => {
 
   resolveInputEntries(cels);
   resolveChannelHandlers(state);
+  resolveEvaluate(cels);
 
   const target = cels.get(PRECOMPUTED_STATES_KEY);
   if (target) {
@@ -117,6 +123,27 @@ const resolveChannelHandlers = (state: State): void => {
       if (h) handlers.push(h);
     }
     cel._channelHandlers = handlers.length > 0 ? handlers : undefined;
+  }
+};
+
+// For every cel whose compiler supplied a buildEvaluate hook (stored
+// on cel._buildEvaluate at compile time), construct a per-cel
+// evaluator closure that captures live cel refs directly. fireCel
+// uses cel._evaluate when set and skips input-object construction.
+// Cels without _buildEvaluate, or whose inputMap didn't resolve to
+// any entries, leave _evaluate undefined — fireCel falls through to
+// the standard gather-and-call path.
+const resolveEvaluate = (cels: Map<Key, Cel>): void => {
+  for (const cel of cels.values()) {
+    if (!cel._buildEvaluate || !cel._inputEntries) {
+      cel._evaluate = undefined;
+      continue;
+    }
+    const inputs: ResolvedInputs = {};
+    for (const [name, cs] of cel._inputEntries) {
+      inputs[name] = cs;
+    }
+    cel._evaluate = cel._buildEvaluate(inputs);
   }
 };
 

@@ -162,6 +162,6 @@ export interface RegisterLambdaArgs {
 
 export type { Cel, DehydratedCel } from "./cels.js";
 export type { ChannelKey, ChannelHandler, ChannelEnqueue } from "./channels.js";
-export type { Fn, LambdaKey, LambdaMetadata, Compiler, CompiledLambda } from "./lambdas.js";
+export type { Fn, LambdaKey, LambdaMetadata, Compiler, CompiledLambda, CompiledEnvelope, ResolvedInputs } from "./lambdas.js";
 export type { SchemaKey, SchemaMetadata, DehydrateSchemas, HydrateSchemas } from "./schemas.js";
 export type { TagKey, TagHandler } from "./tags.js";
