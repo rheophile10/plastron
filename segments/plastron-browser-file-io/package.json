@@ -1,0 +1,14 @@
+{
+  "name": "plastron-browser-file-io",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Browser File API helpers — pickers, downloads, CSV/JSON parsing. Complements plastron-archive for browser entry/exit.",
+  "main": "src/index.ts",
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}
