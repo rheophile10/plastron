@@ -363,7 +363,21 @@ export interface PrecomputeSnapshot {
   segmentHistogram: Record<string, number>;
   cels?: CelSnapshotEntry[];
   configEnvGen: number;
+  /** Count of CelRef cels — transitional bridges left over after
+   *  consolidateInPlace. They are migration scaffolding, not first-class
+   *  fixtures: every ref is technical debt to be removed once consumers
+   *  read the source directly. Surface these prominently in dashboards
+   *  so users notice when they accumulate. */
+  refCelCount: number;
+  /** Bytes attributed to ref cels (count × REF_CEL_BYTES). Tiny per cel,
+   *  but a 10k-cel migration carries ~800 KB of pure scaffolding. */
+  refCelBytes: number;
+  /** source key → ref cel keys pointing at it. Capped at REF_GROUPING_CAP
+   *  per source so a pathological state can't blow up the snapshot. */
+  refCelsBySource?: Record<string, string[]>;
 }
+
+const REF_GROUPING_CAP = 32;
 
 const sizeOfCel = (cel: Cel, state: State): number => {
   // 0. Ref cels have a fixed small footprint (no local v, no _fn,
@@ -427,6 +441,8 @@ export const computePrecomputeSnapshot = (state: State, includeCelDetail: boolea
   let totalCels = 0;
   let totalEstimatedBytes = 0;
   let deepestPath = 0;
+  let refCelCount = 0;
+  const refCelsBySource: Record<string, string[]> = {};
   const detail: CelSnapshotEntry[] | undefined = includeCelDetail ? [] : undefined;
 
   for (const cel of state.cels.values()) {
@@ -436,6 +452,13 @@ export const computePrecomputeSnapshot = (state: State, includeCelDetail: boolea
     if (wave > deepestPath) deepestPath = wave;
     const seg = cel.segment ?? "default";
     segmentHistogram[seg] = (segmentHistogram[seg] ?? 0) + 1;
+
+    if (cel.ref) {
+      refCelCount++;
+      const src = cel.ref.source;
+      const bucket = refCelsBySource[src] ?? (refCelsBySource[src] = []);
+      if (bucket.length < REF_GROUPING_CAP) bucket.push(cel.key);
+    }
 
     const bytes = sizeOfCel(cel, state);
     totalEstimatedBytes += bytes;
@@ -461,6 +484,9 @@ export const computePrecomputeSnapshot = (state: State, includeCelDetail: boolea
     segmentHistogram,
     ...(detail ? { cels: detail } : {}),
     configEnvGen: envGen,
+    refCelCount,
+    refCelBytes: refCelCount * REF_CEL_BYTES,
+    ...(refCelCount > 0 ? { refCelsBySource } : {}),
   };
 };
 

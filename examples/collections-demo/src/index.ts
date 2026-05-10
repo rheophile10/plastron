@@ -375,4 +375,94 @@ console.log(`  actual heap delta:     ${heapDelta >= 0 ? "+" : ""}${heapDelta} b
 const scaleGet = scaleState.fns.get("get") as Fn;
 console.log(`  spot check: get(x_500) = ${scaleGet(scaleState, "x_500")}  (resolves through ref)`);
 
+// ── Migration arc: refs are scaffolding, not first-class fixtures ─────────
+//
+// After consolidateInPlace, refs bridge the old keys so existing
+// downstreams keep working. They are technical debt — every ref is a
+// permanent ~80-byte envelope plus a runtime resolve cost on every
+// downstream read. Drop them once the consumers read the source
+// directly.
+//
+// The lifecycle:
+//   1. consolidateInPlace creates the source + N bridge refs
+//   2. Some downstream cels still read through refs (the bridge works)
+//   3. Find what's still depending on each ref:
+//        findRefDependents(state, "monthly_jan") → ["salesColumn", ...]
+//   4. Rewrite those cels to read the source directly
+//   5. dropRef(state, "monthly_jan") — succeeds because no dependents
+//   6. Or bulk: dropAllRefsTo(state, "monthly_consolidated")
+//
+// stats_precompute now surfaces refCelCount and refCelsBySource so
+// dashboards can flag scaffolding accumulation.
+
+import {
+  findRefDependents, dropRef, dropAllRefsTo,
+} from "../../../segments/plastron-collections/src/consolidate.js";
+
+console.log("\n─── ref-cel migration arc ───");
+
+// Fresh small state for this section. Five scalar cels + one downstream
+// summary cel that reads two of them via inputMap. Tracking enabled so
+// stats_precompute.refCelCount is populated; collections installed so
+// the "buffer" slot accessor is registered for ref resolution.
+const migState = createInitialState();
+installCollections(migState);
+(migState.cels.get(CONFIG_PERFORMANCE)!.v as { enabled: boolean }).enabled = true;
+const migHydrate  = migState.fns.get("hydrate")  as Fn;
+const migRunCycle = migState.fns.get("runCycle") as Fn;
+const migGet      = migState.fns.get("get")      as Fn;
+migHydrate(migState, [{
+  key: "mig",
+  cels: [
+    { key: "p_a", v: 10, segment: "mig" },
+    { key: "p_b", v: 20, segment: "mig" },
+    { key: "p_c", v: 30, segment: "mig" },
+    { key: "p_d", v: 40, segment: "mig" },
+    { key: "p_e", v: 50, segment: "mig" },
+    {
+      key: "ab_sum",
+      l: "f",
+      f: "(+ p_a p_b)",
+      inputMap: { p_a: "p_a", p_b: "p_b" },
+      segment: "mig",
+    },
+  ],
+}], []);
+await migRunCycle(migState);
+
+await consolidateInPlace(migState, ["p_a","p_b","p_c","p_d","p_e"], "p_all", "f64");
+await migRunCycle(migState);
+
+// Snapshot — expect refCelCount: 5, all bridging into "p_all"
+const refSnap = migState.cels.get(STATS_PRECOMPUTE)?.v as PrecomputeSnapshot | undefined;
+console.log(`  stats_precompute.refCelCount    = ${refSnap?.refCelCount ?? "?"}`);
+console.log(`  stats_precompute.refCelBytes    = ${refSnap?.refCelBytes ?? "?"}`);
+console.log(`  stats_precompute.refCelsBySource= ${JSON.stringify(refSnap?.refCelsBySource ?? {})}`);
+
+// ab_sum still reads through p_a + p_b refs — verify the bridge works.
+console.log(`  ab_sum (via refs) = ${migGet(migState, "ab_sum")}  (10 + 20 = 30)`);
+
+// p_c, p_d, p_e have no consumers — safe to drop. p_a, p_b do (ab_sum).
+console.log(`  findRefDependents(p_a) = ${JSON.stringify(findRefDependents(migState, "p_a"))}`);
+console.log(`  findRefDependents(p_c) = ${JSON.stringify(findRefDependents(migState, "p_c"))}`);
+
+// dropRef on p_a should throw (ab_sum still depends on it).
+try {
+  await dropRef(migState, "p_a");
+} catch (e) {
+  console.log(`  dropRef(p_a) refused: ${(e as Error).message.split("\n")[0]?.slice(0, 100)}`);
+}
+
+// dropRef on p_c succeeds (no dependents).
+await dropRef(migState, "p_c");
+console.log(`  dropRef(p_c) — cel removed: ${!migState.cels.has("p_c")}`);
+
+// dropAllRefsTo: bulk-clean every ref into p_all that has no consumers.
+const result = await dropAllRefsTo(migState, "p_all");
+console.log(`  dropAllRefsTo(p_all) → dropped ${JSON.stringify(result.dropped)}, kept ${JSON.stringify(result.kept)}`);
+
+// Final snapshot
+const finalSnap = migState.cels.get(STATS_PRECOMPUTE)?.v as PrecomputeSnapshot | undefined;
+console.log(`  final stats_precompute.refCelCount = ${finalSnap?.refCelCount ?? "?"}  (the kept ones still reading through)`);
+
 console.log("\n[collections-demo] done.");

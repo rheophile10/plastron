@@ -52,6 +52,7 @@
 import type {
   CelTriple, Fn, Key, State,
 } from "../../../plastron/src/index.js";
+import { precompute } from "../../../plastron/src/core/precompute.js";
 import { columnFrom } from "./builders.js";
 import { COLUMN_SCHEMA_KEY, BUFFER_TAG_KEY } from "./schemas.js";
 import type { Column, Dtype } from "./types.js";
@@ -224,4 +225,123 @@ export const expandRefs = async (
     const runCycle = state.fns.get("runCycle") as Fn;
     await runCycle(state);
   }
+};
+
+// ========================================================================
+// Lifecycle helpers — refs are migration scaffolding, not first-class
+// fixtures. After consolidateInPlace, downstream consumers keep working
+// because the refs bridge the old keys. Once you rewrite a consumer to
+// read the source directly (e.g. setCel({ inputMap: { v: "monthlySales" },
+// f: "..." })), the ref it used to read becomes detritus. Use these
+// helpers to find what still depends on a ref, drop refs that have no
+// remaining consumers, or bulk-clean every ref pointing at a source
+// after a migration completes.
+//
+// stats_precompute.refCelCount surfaces the count globally so users see
+// when scaffolding accumulates.
+// ========================================================================
+
+/** Cels whose inputMap mentions `refKey`. Walks state.cels — O(N).
+ *  Returns the empty list when nothing references the key (which means
+ *  the ref is safe to drop). */
+export const findRefDependents = (state: State, refKey: Key): Key[] => {
+  const out: Key[] = [];
+  for (const cel of state.cels.values()) {
+    if (!cel.inputMap) continue;
+    for (const v of Object.values(cel.inputMap)) {
+      if (Array.isArray(v)) {
+        if (v.includes(refKey)) { out.push(cel.key); break; }
+      } else if (v === refKey) {
+        out.push(cel.key);
+        break;
+      }
+    }
+  }
+  return out;
+};
+
+export interface DropRefOptions {
+  /** When true, drop the ref even if dependents still read through it.
+   *  Their resolves will return undefined. Use only when you know the
+   *  dependents are about to be flushed too. */
+  force?: boolean;
+}
+
+/** Delete a single ref cel. Throws if `cel.ref` is unset (not a ref) or
+ *  if dependents exist and `force` is not set. The error includes the
+ *  dependent list so the caller can rewrite them and retry. */
+export const dropRef = async (
+  state: State,
+  refKey: Key,
+  opts?: DropRefOptions,
+): Promise<void> => {
+  const cel = state.cels.get(refKey);
+  if (!cel) throw new Error(`dropRef: cel "${refKey}" not in state.cels`);
+  if (!cel.ref) throw new Error(`dropRef: cel "${refKey}" is not a ref`);
+
+  if (!opts?.force) {
+    const deps = findRefDependents(state, refKey);
+    if (deps.length > 0) {
+      throw new Error(
+        `dropRef: cel "${refKey}" still has ${deps.length} dependents: ` +
+        `${deps.slice(0, 8).join(", ")}${deps.length > 8 ? `, …(+${deps.length - 8})` : ""}. ` +
+        `Rewrite those cels to read the source directly, or pass { force: true }.`,
+      );
+    }
+  }
+
+  // Direct cel deletion. We can't go through setCelBatch with v: null
+  // + ref: null because that would leave an empty value cel rather
+  // than removing the cel entirely. Then call precompute explicitly to
+  // rebuild children/downstream/wave indexes (and refresh
+  // stats_precompute if perf-tracking is on) and run a cycle to fire
+  // any newly affected cels.
+  state.cels.delete(refKey);
+  precompute(state);
+  const runCycle = state.fns.get("runCycle") as Fn;
+  await runCycle(state);
+};
+
+export interface DropAllRefsResult {
+  /** Refs successfully dropped. */
+  dropped: Key[];
+  /** Refs kept because dependents still exist and force was not set.
+   *  Empty when force is true (or when nothing was kept). */
+  kept: Key[];
+}
+
+/** Drop every ref pointing at `sourceKey`. Without `force`, refs whose
+ *  dependents haven't been migrated stay; the result records both sets
+ *  so the caller can iterate the kept list and decide what to do.
+ *
+ *  Typical usage at the end of a migration arc:
+ *    const { dropped, kept } = await dropAllRefsTo(state, "monthlySales");
+ *    if (kept.length === 0) console.log("Migration complete.");
+ *    else console.log(`Still ${kept.length} ref(s) with active consumers.`);
+ */
+export const dropAllRefsTo = async (
+  state: State,
+  sourceKey: Key,
+  opts?: DropRefOptions,
+): Promise<DropAllRefsResult> => {
+  const dropped: Key[] = [];
+  const kept: Key[] = [];
+  const candidates: Key[] = [];
+  for (const cel of state.cels.values()) {
+    if (cel.ref?.source === sourceKey) candidates.push(cel.key);
+  }
+  for (const refKey of candidates) {
+    if (!opts?.force) {
+      const deps = findRefDependents(state, refKey);
+      if (deps.length > 0) { kept.push(refKey); continue; }
+    }
+    state.cels.delete(refKey);
+    dropped.push(refKey);
+  }
+  if (dropped.length > 0) {
+    precompute(state);
+    const runCycle = state.fns.get("runCycle") as Fn;
+    await runCycle(state);
+  }
+  return { dropped, kept };
 };
