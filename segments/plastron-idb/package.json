@@ -1,0 +1,14 @@
+{
+  "name": "plastron-idb",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "IndexedDB persistence segment for plastron — channel for per-cel write-out, blob-handle tag, and segment snapshot/restore helpers. Browser-only; gracefully no-ops where indexedDB is absent.",
+  "main": "src/index.ts",
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}
