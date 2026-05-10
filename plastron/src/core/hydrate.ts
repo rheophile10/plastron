@@ -4,7 +4,10 @@ import type {
   Key, LambdaKey, LambdaMetadata, SchemaKey,
   Segment, TagHandler, TagKey,
 } from "../types/index.js";
-import { precompute } from "./precompute.js";
+import {
+  PRECOMPUTED_STATES_KEY, bfsDownstream, precompute,
+  type PrecomputedIndexes,
+} from "./precompute.js";
 import { dehydrateSchemas, hydrateSchemas } from "./schema-conversion.js";
 
 // Compile a cel's source body (cel.f) via the compiler at
@@ -249,10 +252,26 @@ export const hydrate: Hydrate = (state, segments, fns) => {
   }
 
   precompute(state);
+
+  // Seed the lazy downstream cache from any segment-supplied closures.
+  // Consumer skips the first-write BFS for these keys. Closures are
+  // trusted as-is — validation against the live `inputMap` is a host
+  // concern (cheap to verify in dev: BFS and compare).
+  const indexes = state.cels.get(PRECOMPUTED_STATES_KEY)?.v as PrecomputedIndexes | undefined;
+  if (indexes) {
+    for (const seg of segments) {
+      if (!seg.downstream) continue;
+      for (const [key, ds] of Object.entries(seg.downstream)) {
+        if (!indexes.downstream.has(key)) {
+          indexes.downstream.set(key, new Set(ds));
+        }
+      }
+    }
+  }
   return state;
 };
 
-export const dehydrate: Dehydrate = (state) => {
+export const dehydrate: Dehydrate = (state, opts) => {
   // Reverse map for deflating cel.schema (ZodType → SchemaKey).
   const schemaToKey = new Map<z.ZodType, SchemaKey>();
   for (const [key, zodSchema] of state.schemas) {
@@ -285,6 +304,28 @@ export const dehydrate: Dehydrate = (state) => {
     ? Object.fromEntries(state.schemaMetadata)
     : undefined;
 
+  // Bake whatever downstream closures live in the runtime cache plus
+  // any explicitly requested via opts.bakeDownstream. Cached entries
+  // come from prior cascade activity (set/batch warmed them); baking
+  // adds keys the host wants pre-warmed for the consumer (e.g. known
+  // input keys the consumer will write at startup). Cost: one BFS per
+  // requested key not already in the cache.
+  const indexes = state.cels.get(PRECOMPUTED_STATES_KEY)?.v as PrecomputedIndexes | undefined;
+  let downstream: Record<Key, Key[]> | undefined;
+  if (indexes) {
+    if (opts?.bakeDownstream) {
+      for (const k of opts.bakeDownstream) {
+        if (!indexes.downstream.has(k)) {
+          indexes.downstream.set(k, bfsDownstream(k, indexes.children));
+        }
+      }
+    }
+    if (indexes.downstream.size > 0) {
+      downstream = {};
+      for (const [k, ds] of indexes.downstream) downstream[k] = [...ds];
+    }
+  }
+
   const segments: Segment[] = [];
   let pinned = false;
   for (const [key, cels] of bySegment) {
@@ -293,6 +334,7 @@ export const dehydrate: Dehydrate = (state) => {
       if (dehydratedSchemas) seg.schemas = dehydratedSchemas;
       if (fnMetaData)        seg.fnMetaData = fnMetaData;
       if (schemaMetadata)    seg.schemaMetadata = schemaMetadata;
+      if (downstream)        seg.downstream = downstream;
       pinned = true;
     }
     segments.push(seg);

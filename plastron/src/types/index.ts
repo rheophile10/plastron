@@ -49,6 +49,15 @@ export interface Segment {
   fnMetaData?: Record<LambdaKey, LambdaMetadata>;
   schemas?: Record<SchemaKey, z.core.JSONSchema.JSONSchema>;
   schemaMetadata?: Record<SchemaKey, SchemaMetadata>;
+  /** Optional precomputed downstream closures: key → list of cel keys
+   *  in its transitive downstream set (excluding self). When present,
+   *  hydrate seeds the runtime cache so the first write to any of
+   *  these keys skips the BFS warm-up. Fully derivable from inputMap
+   *  — shipping this is a startup-latency optimization, not a
+   *  correctness requirement. Closures only need to ship for keys the
+   *  consumer is expected to write at startup; everything else
+   *  lazy-fills on first use. */
+  downstream?: Record<Key, Key[]>;
 }
 
 export interface State {
@@ -87,10 +96,22 @@ export type Hydrate = (
   fns: Map<LambdaKey, Fn>[],
 ) => State;
 
+export interface DehydrateOpts {
+  /** Keys whose downstream closures should be computed (if not already
+   *  cached) and shipped on the first emitted segment. Use this to
+   *  pre-warm a consumer for keys it's expected to write at startup —
+   *  the consumer's first write skips the BFS warm-up and goes
+   *  straight to a cached closure. Closures already in the runtime
+   *  cache from prior cascade activity always ship; this option just
+   *  adds explicit warming. Pass `[]` (or omit) to ship only what's
+   *  cached; pass nothing to skip the field entirely. */
+  bakeDownstream?: Key[];
+}
+
 /** Decompose a State into JSON-serializable Segments. The inverse of
  *  Hydrate. Lossy where Zod schemas carry refinements, transforms, or
  *  brands. */
-export type Dehydrate = (state: State) => Segment[];
+export type Dehydrate = (state: State, opts?: DehydrateOpts) => Segment[];
 
 // ============================================================================
 // Cel triple — the per-cel update payload used by getCel / setCel and

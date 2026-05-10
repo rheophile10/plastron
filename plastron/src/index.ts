@@ -20,6 +20,7 @@ const seedPrecomputedStatesCel = (): Cel => ({
   v: {
     waveCascade: new Map(),
     sortedWaves: [],
+    children: new Map(),
     downstream: new Map(),
     dynamicCascade: new Set(),
   } satisfies PrecomputedIndexes,

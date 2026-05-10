@@ -13,17 +13,18 @@ import type {
 //   • Essential pass (sync, in `precompute(state)`):
 //         Wave grouping → topoLevels → waveCascade
 //         sortedWaves
-//         buildChildren → buildDownstream → downstream
-//         buildDynamicCascade → dynamicCascade
+//         buildChildren → children (reverse adjacency, O(V+E))
+//         buildDynamicCascade → dynamicCascade  (one BFS per dynamic seed)
+//         Initialize empty downstream cache
 //         Write the precomputedStates cel
 //         Invalidate per-cel runtime caches (_inputEntries,
 //           _channelHandlers, _evaluate) so fireCel falls through to
 //           slow paths until the optional pass repopulates them.
 //         Bump state.precomputeGeneration.
 //         Schedule the optional pass (fire-and-forget; never throws).
-//     The cascade can fire correctly the moment precompute returns —
-//     correctness comes from the indexes + fallback paths in fireCel,
-//     not from the runtime caches.
+//     Total cost O(V+E). The cascade can fire correctly the moment
+//     precompute returns — correctness comes from the indexes +
+//     fallback paths in fireCel, not from the runtime caches.
 //
 //   • Optional pass (async, in `precomputeOptional(state)`):
 //         For each cel (chunked at OPTIONAL_CHUNK_SIZE = 256, with a
@@ -44,12 +45,21 @@ import type {
 //         fns just complete inline).
 //       sortedWaves — waveCascade keys sorted ascending. Cached so
 //         runCascade doesn't re-spread + re-sort on every cycle.
-//       downstream — for each key, the closure of cels downstream
-//         (children + grandchildren …). Used by set/batch to scope
-//         the affected set.
-//       dynamicCascade — every cel marked `dynamic` plus their
-//         downstream closures, unioned. Always included on every cycle
-//         so volatile cels (clocks, randoms) refresh.
+//       children — reverse adjacency: for each upstream key, the set of
+//         cels that consume it as input. Built eagerly (O(E)) so
+//         affectedFor can BFS from any written key without walking the
+//         full cel map. The single source of truth for downstream
+//         relationships; `downstream` below is just a memo over BFS.
+//       downstream — lazy memoized closure cache. Empty after each
+//         essential pass; affectedFor fills entries on first write to
+//         a key, hits cache on subsequent writes. Hydrate may seed
+//         this from a segment's optional `downstream` field, so a
+//         consumer that immediately writes a known input key gets
+//         O(1) closure lookup with no warm-up.
+//       dynamicCascade — every cel marked `dynamic` plus its downstream
+//         closure, unioned. Built eagerly via per-seed BFS over
+//         `children`. Always included on every cycle so volatile cels
+//         (clocks, randoms) refresh.
 // ============================================================================
 
 export const PRECOMPUTED_STATES_KEY = "precomputedStates" as const;
@@ -67,7 +77,15 @@ export interface PrecomputedIndexes {
   waveCascade: Map<number, Key[][]>;
   /** waveCascade.keys() sorted ascending. Cached for runCascade. */
   sortedWaves: number[];
-  /** key → set of cel keys downstream of it (excluding self). */
+  /** Reverse adjacency: for each upstream key, the set of cels that
+   *  consume it as input. Built eagerly (O(E)). affectedFor BFSes over
+   *  this; the source of truth for the dependency graph. */
+  children: Map<Key, Set<Key>>;
+  /** Lazy memoized closure cache: key → set of cel keys downstream of
+   *  it (excluding self). Empty after every essential precompute pass;
+   *  affectedFor fills entries on first write, reads cached entries on
+   *  subsequent writes. Hydrate may seed this from a segment's optional
+   *  `downstream` field. */
   downstream: Map<Key, Set<Key>>;
   /** Union of every dynamic cel + its downstream closure. */
   dynamicCascade: Set<Key>;
@@ -93,8 +111,7 @@ export const precompute = (state: State): void => {
   const sortedWaves = [...waveCascade.keys()].sort((a, b) => a - b);
 
   const children = buildChildren(cels);
-  const downstream = buildDownstream(cels, children);
-  const dynamicCascade = buildDynamicCascade(cels, downstream);
+  const dynamicCascade = buildDynamicCascade(cels, children);
 
   // Invalidate per-cel runtime caches so the cascade falls back to
   // slow paths until the optional pass repopulates. Without this,
@@ -114,7 +131,11 @@ export const precompute = (state: State): void => {
   const target = cels.get(PRECOMPUTED_STATES_KEY);
   if (target) {
     target.v = {
-      waveCascade, sortedWaves, downstream, dynamicCascade,
+      waveCascade,
+      sortedWaves,
+      children,
+      downstream: new Map(),
+      dynamicCascade,
     } satisfies PrecomputedIndexes;
   }
 
@@ -235,43 +256,42 @@ const buildChildren = (cels: Map<Key, Cel>): Map<Key, Set<Key>> => {
   return children;
 };
 
-// For every cel, collect the transitive closure of cels downstream.
-// O(N · E) worst case — fine for small graphs; revisit if a sheet ever
-// pushes much past a few thousand cels.
-const buildDownstream = (
-  cels: Map<Key, Cel>,
+// BFS the downstream closure of `start` over the children adjacency.
+// Excludes `start` itself; matches the semantics affectedFor needs.
+// Cost: O(|closure|), bounded by the size of the affected subgraph.
+export const bfsDownstream = (
+  start: Key,
   children: Map<Key, Set<Key>>,
-): Map<Key, Set<Key>> => {
-  const downstream = new Map<Key, Set<Key>>();
-
-  const collect = (key: Key, acc: Set<Key>): void => {
-    const kids = children.get(key);
-    if (!kids) return;
-    for (const k of kids) {
-      if (acc.has(k)) continue;
-      acc.add(k);
-      collect(k, acc);
+): Set<Key> => {
+  const acc = new Set<Key>();
+  const queue: Key[] = [];
+  const seed = children.get(start);
+  if (!seed) return acc;
+  for (const c of seed) { acc.add(c); queue.push(c); }
+  while (queue.length > 0) {
+    const k = queue.pop()!;
+    const kids = children.get(k);
+    if (!kids) continue;
+    for (const c of kids) {
+      if (!acc.has(c)) { acc.add(c); queue.push(c); }
     }
-  };
-
-  for (const key of cels.keys()) {
-    const acc = new Set<Key>();
-    collect(key, acc);
-    downstream.set(key, acc);
   }
-  return downstream;
+  return acc;
 };
 
+// Build the dynamic cascade: union of every dynamic seed + its
+// downstream closure. One BFS per dynamic seed over `children` —
+// typically a handful of clocks/randoms, so cheap.
 const buildDynamicCascade = (
   cels: Map<Key, Cel>,
-  downstream: Map<Key, Set<Key>>,
+  children: Map<Key, Set<Key>>,
 ): Set<Key> => {
   const result = new Set<Key>();
   for (const [key, cel] of cels) {
     if (!cel.dynamic) continue;
     result.add(key);
-    const ds = downstream.get(key);
-    if (ds) for (const k of ds) result.add(k);
+    const ds = bfsDownstream(key, children);
+    for (const k of ds) result.add(k);
   }
   return result;
 };

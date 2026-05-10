@@ -1,14 +1,29 @@
 # plastron 🐢
 
-A reactive computation kernel for TypeScript. Cels hold values or formulas; writing one fires a cascade that recomputes every downstream cel in topological order. Spreadsheet semantics, lifted out of the spreadsheet.
+A reactive computation kernel for TypeScript. Cels hold values or formulas; writing one fires a cascade that recomputes every downstream cel in topological order. Pluggable compilers (formula, Scheme, Python, WASM) plug new languages in at the cel boundary. Pluggable channels (DOM, IndexedDB, audit log, network) route changes to side-effect sinks. The whole graph round-trips through JSON segments.
+
+## Where it sits
+
+Plastron is a small reactive kernel, ~2.4 kloc of TypeScript. It's not a spreadsheet engine and it's not a UI framework. The closest neighbors:
+
+| | plastron | HyperFormula | Solid / Preact signals |
+|---|---|---|---|
+| Shape | reactive DAG, JSON-serializable | headless spreadsheet engine | reactive primitive in a UI framework |
+| Formula language | swappable (S-expr default; register Scheme, Python, WASM at any key) | Excel-compatible (~400 functions) | none — TypeScript expressions |
+| Numeric storage | heterogeneous JS objects | packed column matrices | per-signal closures |
+| Side-effect routing | declarative `cel.channel` → pluggable sinks | n/a (calc engine only) | `createEffect` |
+| Bundle | tiny | large | tiny |
+| License | MIT | GPLv3 / commercial | MIT |
+
+If you want Excel-without-the-UI for numeric workloads, use HyperFormula. If you want fine-grained reactivity inside a UI framework, use Solid or signals. Plastron's niche is the middle: an embeddable reactive kernel where the formula language is yours to pick (or design), the side effects are declarative, and the graph itself is JSON you can ship over the wire.
 
 ## Lore
 
 In Shang dynasty China (c. 1600–1046 BCE), diviners would take a freshly cleaned turtle plastron — the ventral shell — score it with grooves on the back, and apply a hot brand. The shell would crack along the grooves; the diviner would read the cracks as an answer to a question, then inscribe the question and answer on the same plastron in oracle-bone script. One artifact: the substrate, the query, the computation, and the record. About 200,000 plastrons and ox scapulae from this practice have been excavated; their inscriptions are among the earliest known forms of Chinese writing.
 
-Three thousand years later, the same idea — a substrate where you write down a question, the substrate computes for you, and the answer is also written down on it — gets reinvented as the spreadsheet. VisiCalc (1979). Lotus 1-2-3 (1983, formulas in a binary container). Excel (1985, then everywhere). xlsx (2007, a zip of XML files: open format, locked engine). The substrate keeps getting more capable, but the engine that interprets it lives inside one application.
+Three thousand years later, the same idea — a substrate where you write down a question, the substrate computes for you, and the answer is also written down on it — gets reinvented as the spreadsheet. VisiCalc (1979). Lotus 1-2-3 (1983, formulas in a binary container). Excel (1985, then everywhere). xlsx (2007, a zip of XML files: open format, locked engine). One artifact carries the question, the data, the computation, and the answer.
 
-Plastron the kernel lifts the engine out. The substrate is JSON segments. The engine is a few hundred lines of TypeScript. You bring the syntax for the formulas — the kernel only knows about cels, dependencies, waves, and channels.
+Plastron borrows the structure — substrate carries everything — without claiming to be a spreadsheet. The substrate is JSON segments. The engine is a few hundred lines of TypeScript. You bring the syntax for the formulas — the kernel only knows about cels, dependencies, waves, and channels.
 
 — Background on the project's name: [`plastromancy.md`](plastromancy.md).
 
@@ -63,6 +78,7 @@ interface Segment {
   schemas?:        Record<SchemaKey, JSONSchema>;
   fnMetaData?:     Record<LambdaKey, LambdaMetadata>;
   schemaMetadata?: Record<SchemaKey, SchemaMetadata>;
+  downstream?:     Record<Key, Key[]>;     // optional, see "Shipping precomputed closures"
 }
 ```
 
@@ -73,8 +89,9 @@ interface Segment {
 3. **Inflate cels.** Each `DehydratedCel` becomes a live `Cel`. If `cel.f` is set, the compiler at `state.fns.get(cel.l ?? "f")` runs against the source string; the result populates `cel._fn` (and optionally `cel._dispose`, `cel._buildEvaluate` — see _Non-essential optimization_ below).
 4. **Materialize schema fns.** Cels with a `schema` get `_isChanged` and `_diffFn` resolved from the schema's metadata — change-detection and diff production live where they belong (on the schema), not on the cel.
 5. **Precompute.** The DAG indexes get derived. See next section.
+6. **Seed closure cache.** If any segment ships a `downstream` field, those entries pre-populate the lazy `downstream` cache so the consumer's first write to a baked key skips the BFS warm-up.
 
-Dehydration is the inverse: walk live cels, write JSON. Lossy where Zod schemas carry refinements, transforms, or brands — those don't survive the round-trip through JSON Schema.
+Dehydration is the inverse: walk live cels, write JSON, and (optionally) bake `downstream` closures for the keys the consumer will write at startup. Lossy where Zod schemas carry refinements, transforms, or brands — those don't survive the round-trip through JSON Schema.
 
 ## Precompute and Kahn's algorithm
 
@@ -95,16 +112,49 @@ while remaining ≠ ∅:
     remaining ← remaining \ ready
 ```
 
-The result is a `Map<number, Key[][]>` from wave number to levels. Plus three companions:
+The result is a `Map<number, Key[][]>` from wave number to levels. Plus four companions:
 
-| Index | Shape | Used by |
-|---|---|---|
-| `waveCascade` | `Map<wave, Key[][]>` | `runCascade`, the iteration order |
-| `sortedWaves` | `number[]` | the outer loop in `runCascade` |
-| `downstream` | `Map<Key, Set<Key>>` | `set/batch` to scope the affected set |
-| `dynamicCascade` | `Set<Key>` | volatile cels (`dynamic: true`) + their downstreams; always included |
+| Index | Shape | Built when | Used by |
+|---|---|---|---|
+| `waveCascade` | `Map<wave, Key[][]>` | eager, every precompute | `runCascade`, the iteration order |
+| `sortedWaves` | `number[]` | eager | outer loop in `runCascade` |
+| `children` | `Map<Key, Set<Key>>` | eager, $O(E)$ | `affectedFor` (BFS source) |
+| `downstream` | `Map<Key, Set<Key>>` | **lazy memo**, fills on first write | `set/batch` to scope the affected set |
+| `dynamicCascade` | `Set<Key>` | eager, BFS per dynamic seed | volatile cels + their downstreams; always included |
 
-The cost of building these scales with $O(N \cdot E)$ for the transitive closure (fine for small graphs; revisit when sheets push past a few thousand cels).
+`children` is reverse adjacency: for each upstream key, the cels that consume it. Built once per precompute in $O(V + E)$.
+
+`downstream` is a lazy memoized closure cache, **not** built up front. The first `set(k)` BFSes from $k$ over `children` and stores the result; subsequent writes to the same $k$ hit the cache. Each essential precompute pass installs a fresh empty cache, so a topology change can't surface a stale closure.
+
+Total precompute cost: $O(V + E)$. Per-write cost: $O(|\text{aff}(k)|)$ on first write to $k$ since the last topology change, $O(1)$ on subsequent writes (modulo the cascade itself).
+
+Hydrate may pre-seed `downstream` from a segment's optional [`downstream` field](#shipping-precomputed-closures), so a consumer that immediately writes a known input key skips the BFS warm-up.
+
+## Shipping precomputed closures
+
+`Segment.downstream` is an optional `Record<Key, Key[]>` that maps an upstream key to the list of cels in its transitive downstream set. It's fully derivable from `inputMap` — shipping it is a startup-latency optimization for the consumer, not a correctness requirement.
+
+```ts
+interface Segment {
+  // ...
+  downstream?: Record<Key, Key[]>;
+}
+```
+
+`dehydrate(state, opts?)` decides what to put there:
+
+- **Default** — whatever's already in the runtime cache from prior cascade activity. If the host has been running for a while, the hot input keys are already cached and ship for free.
+- **`opts.bakeDownstream: Key[]`** — explicit warming. The dehydrator BFSes any of those keys not already cached (one BFS per key, $O(|\text{aff}(k)|)$ each) and ships the result.
+
+```ts
+const segments = dehydrate(state, {
+  bakeDownstream: ["price", "qty", "user.id"],
+});
+```
+
+`hydrate` reads the field and seeds `indexes.downstream` after precompute, so `set("price", …)` immediately after hydrate skips the BFS warm-up.
+
+The closure is derived data, so a hand-edited segment can drift out of sync with `inputMap`. In dev builds, validate by BFSing each shipped closure and comparing against the live cache. Stale closures are cheap to detect and cheaper to drop than to debug.
 
 ## State changes through the DAG
 
@@ -320,7 +370,8 @@ The kernel splits precompute into two phases. The cascade fires correctly after 
 **Essential** (sync, must complete before any cascade fires):
 
 - `waveCascade`, `sortedWaves`
-- `downstream`
+- `children` (reverse adjacency, $O(E)$)
+- Empty `downstream` cache (fills lazily as writes arrive)
 - `dynamicCascade`
 - Invalidate per-cel runtime caches
 - Bump `state.precomputeGeneration`

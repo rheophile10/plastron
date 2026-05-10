@@ -1,5 +1,5 @@
 import type { Cel, Fn, Key, State } from "../types/index.js";
-import { PRECOMPUTED_STATES_KEY, type PrecomputedIndexes } from "./precompute.js";
+import { PRECOMPUTED_STATES_KEY, bfsDownstream, type PrecomputedIndexes } from "./precompute.js";
 import { releaseValue } from "./hydrate.js";
 
 // Route a changed cel onto every channel handler. The fast path reads
@@ -259,14 +259,25 @@ export const runCascade = async (
 // Compute the affected set for an incremental fire: union of the
 // dynamic cascade (so volatile cels always refresh) and the downstream
 // closure of every written key.
+//
+// Closures are lazy-memoized in indexes.downstream. Miss → BFS over
+// indexes.children, store, return. Hit → reuse. The cache is freshly
+// empty after every essential precompute pass (the indexes object is
+// reassigned), so stale closures from a reshaped graph cannot leak.
+// Hydrate may pre-seed the cache from a segment's optional `downstream`
+// field, removing the first-write BFS for known input keys.
 export const affectedFor = (state: State, writtenKeys: Key[]): Set<Key> => {
   const affected = new Set<Key>();
   const indexes = readIndexes(state);
   if (!indexes) return affected;
   for (const k of indexes.dynamicCascade) affected.add(k);
   for (const k of writtenKeys) {
-    const ds = indexes.downstream.get(k);
-    if (ds) for (const c of ds) affected.add(c);
+    let ds = indexes.downstream.get(k);
+    if (!ds) {
+      ds = bfsDownstream(k, indexes.children);
+      indexes.downstream.set(k, ds);
+    }
+    for (const c of ds) affected.add(c);
   }
   return affected;
 };

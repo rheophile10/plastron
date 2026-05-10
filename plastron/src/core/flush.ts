@@ -24,8 +24,8 @@ import { precompute } from "./precompute.js";
 // register and tear down.
 //
 // After deletions, re-runs precompute so the topology indexes
-// (waveCascade, downstream, dynamicCascade) reflect the new graph.
-// No-ops when nothing matches.
+// (waveCascade, children, dynamicCascade) reflect the new graph and
+// the downstream cache resets to empty. No-ops when nothing matches.
 // ============================================================================
 
 export const flush: Fn = async (state: State, segmentKey: Key) => {
