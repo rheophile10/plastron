@@ -1,0 +1,20 @@
+{
+  "name": "plastron-mjml",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "MJML compiler kind for plastron — cels with cel.l = 'mjml' compile MJML source to HTML, with input substitution.",
+  "main": "src/index.ts",
+  "engines": {
+    "node": ">=18"
+  },
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "mjml": "^5.2.0"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}
