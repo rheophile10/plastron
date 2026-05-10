@@ -7,6 +7,7 @@
   "scripts": {
     "start": "tsx src/index.ts",
     "smoke": "tsx src/smoke.ts",
+    "microbench": "tsx src/microbench.ts",
     "check": "tsc --noEmit"
   },
   "devDependencies": {

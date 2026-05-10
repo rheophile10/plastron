@@ -1,6 +1,10 @@
 import type { z } from "zod";
-import type { Cel, Key, SchemaKey, SegmentManifest, State } from "./types/index.js";
+import type { Cel, Key, SchemaKey, SegmentManifest, SlotAccessor, State, TagKey } from "./types/index.js";
 import { coreFns, coreFnMetadata } from "./core/index.js";
+import {
+  DEFAULT_ARRAY_ACCESSOR_KEY, DEFAULT_OBJECT_ACCESSOR_KEY,
+  defaultArrayAccessor, defaultObjectAccessor,
+} from "./core/refs.js";
 import {
   CONFIG_ENVIRONMENT, CONFIG_PERFORMANCE, CONFIG_SEGMENT,
   DEFAULT_PERF_CONFIG, PERF_CONFIG_SCHEMA, PERF_CONFIG_SCHEMA_KEY,
@@ -143,6 +147,15 @@ export const createInitialState = (): State => {
   const schemas = new Map<SchemaKey, z.ZodType>();
   schemas.set(PERF_CONFIG_SCHEMA_KEY, PERF_CONFIG_SCHEMA);
 
+  // Default slot accessors for ref cels — handle plain arrays /
+  // objects out of the box. Sources without a tag fall back to one of
+  // these (selected by source-value shape in core/refs.ts). Segments
+  // installing typed-array envelopes (Column, Table, Matrix) register
+  // their own accessor under the corresponding tag key.
+  const slotAccessors = new Map<TagKey, SlotAccessor>();
+  slotAccessors.set(DEFAULT_ARRAY_ACCESSOR_KEY,  defaultArrayAccessor);
+  slotAccessors.set(DEFAULT_OBJECT_ACCESSOR_KEY, defaultObjectAccessor);
+
   return {
     cels,
     fns:                  new Map(coreFns),
@@ -150,6 +163,7 @@ export const createInitialState = (): State => {
     schemas,
     schemaMetadata:       new Map(),
     tagRegistry:          new Map(),
+    slotAccessors,
     fnDispose:            new Map(),
     channelRegistry:      new Map(),
     precomputeGeneration: 0,

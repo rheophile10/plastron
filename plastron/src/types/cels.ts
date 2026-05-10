@@ -5,6 +5,39 @@ import type { Fn, LambdaKey, ResolvedInputs } from "./lambdas.js";
 import type { SchemaKey } from "./schemas.js";
 import type { TagKey } from "./tags.js";
 
+// ============================================================================
+// CelRef — a thin alias cel that holds a pointer into a slot of a
+// consolidated structure rather than holding its own value.
+//
+// Reads resolve to source.v[slot] via the registered SlotAccessor for
+// the source's tag (or a default array/object accessor when the source
+// has no tag). Writes route through the accessor's write hook, which
+// either mutates the source in place + bumps `gen` (Column / Matrix)
+// or returns a shallow-cloned source (Table / plain object) that the
+// kernel installs via the normal set path.
+//
+// Lifetime contract: a ref cel has no `v` of its own (always undefined /
+// null). It coexists at the cel layer with `key`, `segment`, `schema`,
+// `tag`, `channel`, `wave`, `dynamic` — those apply to the *resolved*
+// value. A ref cel has no `f`, no `l`, no `_fn`, no `_evaluate`,
+// no `_inputEntries`. The hydrate / setCel layers refuse to add
+// compute fields to a ref cel and refuse to add a ref to a compute
+// cel; users convert by clearing one side and installing the other in
+// the same triple.
+// ============================================================================
+
+export interface CelRef {
+  /** Cel key whose value is the consolidated structure. Must resolve
+   *  to a cel in state.cels at hydrate / setCel time; dangling refs
+   *  read undefined and write-fail (recorded into the errors cel). */
+  source: Key;
+  /** Index into the source's value. Interpretation depends on the
+   *  source's shape — Column uses number, Table uses string column
+   *  name, Matrix uses number[] coords. The source's SlotAccessor
+   *  decides how to interpret it. */
+  slot: number | string | number[];
+}
+
 export interface Cel {
   key: Key;
   v: unknown;
@@ -45,6 +78,15 @@ export interface Cel {
    *  this cel's value changes. A list fans out to every named channel.
    *  Channels own coalescing + commit timing — kernel just routes. */
   channel?: ChannelKey | ChannelKey[];
+  /** When set, this cel is a ref into another cel's value. The ref
+   *  cel has no `v` of its own (cel.v stays undefined / null); reads
+   *  resolve through the source's slot, writes mutate the source's
+   *  slot in place via the registered SlotAccessor.
+   *
+   *  Mutually exclusive with `f`, `l`, `_fn`, `_evaluate`. A ref cel
+   *  may still declare `schema`, `tag`, `channel`, `dynamic` — those
+   *  apply to the *resolved* value, not to the absent local v. */
+  ref?: CelRef;
 
   // ── Materialized at hydrate time, runtime-only (not on DehydratedCel) ──
 
@@ -90,13 +132,16 @@ export interface Cel {
   _channelHandlers?: ChannelHandler[];
   /** Compiler-supplied closure builder, captured at compile time from
    *  the CompiledEnvelope returned by the cel's compiler. The optional
-   *  precompute pass invokes this with the resolved inputs to produce
-   *  cel._evaluate; the result may be a synchronous closure or a
-   *  Promise of one (compilers that need async setup — WASM, worker
-   *  spawn, network fetch — return the latter; the async pass awaits
-   *  it before storing). Compilers that don't provide one leave this
-   *  undefined; fireCel uses the standard gather-and-call path. */
-  _buildEvaluate?: (inputs: ResolvedInputs) => (() => unknown) | Promise<() => unknown>;
+   *  precompute pass invokes this with the live state and resolved
+   *  inputs to produce cel._evaluate; the result may be a synchronous
+   *  closure or a Promise of one (compilers that need async setup —
+   *  WASM, worker spawn, network fetch — return the latter; the async
+   *  pass awaits it before storing). Receiving `state` lets emitted
+   *  closures resolve through ref cels via resolveValue without
+   *  rediscovering the registry per fire. Compilers that don't provide
+   *  one leave this undefined; fireCel uses the standard gather-and-
+   *  call path. */
+  _buildEvaluate?: (state: import("./index.js").State, inputs: ResolvedInputs) => (() => unknown) | Promise<() => unknown>;
   /** Per-cel monomorphic closure that returns the cel's next value.
    *  Built by precompute via cel._buildEvaluate(resolvedInputs); the
    *  closure captures live cel refs directly, so calling it skips both
@@ -122,4 +167,9 @@ export interface DehydratedCel {
   f?: string;
   tag?: TagKey;
   channel?: ChannelKey | ChannelKey[];
+  /** Ref-cel form. Round-trips as plain data; hydrate validates the
+   *  source/slot against state.cels + slotAccessors *after* every
+   *  segment is loaded so cross-segment ref/source ordering doesn't
+   *  matter. See plastron/src/core/refs.ts. */
+  ref?: CelRef;
 }

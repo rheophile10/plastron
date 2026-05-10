@@ -99,9 +99,14 @@ export interface PrecomputedIndexes {
 export const precompute = (state: State): void => {
   const cels = state.cels;
 
+  // Collect cels that participate in the cascade: lambda cels (cel.l)
+  // and ref cels (cel.ref). Ref cels are pass-through nodes — they
+  // don't have an fn body, but they still need a slot in waveCascade
+  // so fireCel visits them, marks them changed when the source
+  // changed, and routes channels.
   const byWave = new Map<number, Key[]>();
   for (const cel of cels.values()) {
-    if (!cel.l) continue;
+    if (!cel.l && !cel.ref) continue;
     const wave = cel.wave ?? 0;
     let bucket = byWave.get(wave);
     if (!bucket) { bucket = []; byWave.set(wave, bucket); }
@@ -218,12 +223,20 @@ export const precomputeOptional = async (state: State): Promise<void> => {
         // hook. Sync return → store directly. Promise return → await
         // (the only place the optional pass can yield mid-cel) and
         // re-check the generation token before storing.
+        //
+        // Ref-aware codegen: emitters (formula.ts and any other
+        // CompiledEnvelope) receive both the live state and the
+        // resolved inputs, so they can emit reads that resolve through
+        // ref cels at fire time. This means consolidated values
+        // (formerly scalar cels turned into refs by consolidateInPlace)
+        // keep the codegen fast path for every downstream formula —
+        // exactly the transparency cel-refs aim for.
         if (cel._buildEvaluate && cel._inputEntries) {
           const inputs: ResolvedInputs = {};
           for (const [name, cs] of cel._inputEntries) {
             inputs[name] = cs;
           }
-          const result = cel._buildEvaluate(inputs);
+          const result = cel._buildEvaluate(state, inputs);
           if (result instanceof Promise) {
             const resolved = await result;
             if (state.precomputeGeneration !== myGen) return;
@@ -257,18 +270,27 @@ export const precomputeOptional = async (state: State): Promise<void> => {
 
 // ── Index helpers ───────────────────────────────────────────────────────────
 
-// Reverse adjacency derived from inputMap: for each upstream cel,
-// the set of cels that consume it as input.
+// Reverse adjacency derived from inputMap and cel.ref: for each upstream
+// cel, the set of cels that consume it as input. Ref cels add a
+// source → ref edge so a write to the source fires every ref pointing
+// at it (and every cel whose inputMap names one of those refs, via the
+// transitive walk in bfsDownstream).
 const buildChildren = (cels: Map<Key, Cel>): Map<Key, Set<Key>> => {
   const children = new Map<Key, Set<Key>>();
   for (const cel of cels.values()) {
-    if (!cel.inputMap) continue;
-    for (const ref of Object.values(cel.inputMap)) {
-      for (const upstream of Array.isArray(ref) ? ref : [ref]) {
-        let s = children.get(upstream);
-        if (!s) { s = new Set(); children.set(upstream, s); }
-        s.add(cel.key);
+    if (cel.inputMap) {
+      for (const ref of Object.values(cel.inputMap)) {
+        for (const upstream of Array.isArray(ref) ? ref : [ref]) {
+          let s = children.get(upstream);
+          if (!s) { s = new Set(); children.set(upstream, s); }
+          s.add(cel.key);
+        }
       }
+    }
+    if (cel.ref) {
+      let s = children.get(cel.ref.source);
+      if (!s) { s = new Set(); children.set(cel.ref.source, s); }
+      s.add(cel.key);
     }
   }
   return children;
@@ -330,6 +352,13 @@ const topoLevels = (members: Key[], cels: Map<Key, Cel>): Key[][] => {
           if (memberSet.has(k)) ds.add(k);
         }
       }
+    }
+    // Ref cel depends on its source — order it strictly after the
+    // source's level. Sources without their own cel.l/cel.ref aren't
+    // in `members`; they're plain value cels and don't need ordering
+    // (the cascade reaches the ref via the children edge regardless).
+    if (cel.ref && memberSet.has(cel.ref.source)) {
+      ds.add(cel.ref.source);
     }
     upstreamOf.set(key, ds);
   }

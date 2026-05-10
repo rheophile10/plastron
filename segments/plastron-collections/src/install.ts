@@ -10,6 +10,7 @@ import {
   matrixByteLength, matrixIsChanged, matrixSchema,
   tableByteLength, tableIsChanged, tableSchema,
 } from "./schemas.js";
+import { columnSlotAccessor } from "./refs.js";
 import { bufferTag } from "./tag.js";
 import { opFnMetadata, opFns } from "./ops.js";
 
@@ -109,6 +110,13 @@ export const installCollections = (state: State): void => {
   // ── Tag handler ───────────────────────────────────────────────────────
   if (!state.tagRegistry.has(BUFFER_TAG_KEY)) {
     state.tagRegistry.set(BUFFER_TAG_KEY, bufferTag);
+  }
+
+  // ── Slot accessor (used by ref cels pointing into a buffer-tagged
+  //    Column / Table / Matrix). Same idempotency pattern as the tag
+  //    handler — first install wins; later calls are no-ops.
+  if (!state.slotAccessors.has(BUFFER_TAG_KEY)) {
+    state.slotAccessors.set(BUFFER_TAG_KEY, columnSlotAccessor);
   }
 
   // ── Fns + fnMetadata via hydrate, so the segment manifest is

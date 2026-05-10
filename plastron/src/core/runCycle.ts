@@ -1,6 +1,7 @@
 import type { Cel, Fn, Key, State } from "../types/index.js";
 import { PRECOMPUTED_STATES_KEY, bfsDownstream, type PrecomputedIndexes } from "./precompute.js";
 import { releaseValue } from "./hydrate.js";
+import { resolveValue } from "./refs.js";
 import {
   beginCycle, ensureChannelDrainsWrapped, flushCycleStats, nowNs,
   recordChannelEnqueue, recordFireTiming, recordSkip, recordWaveTiming,
@@ -115,7 +116,38 @@ const fireCel = (
   perfCtx: PerfCtx | undefined,
 ): void | Promise<void> => {
   const cel = state.cels.get(key);
-  if (!cel || !cel.l) return;
+  if (!cel) return;
+  // Ref cels are pass-through nodes. They have no fn body — reads
+  // resolve through the source's slot at gather time. We still need
+  // to participate in cascade book-keeping (suppression mode adds
+  // them to `changed` so downstream cels see them as inputs that
+  // shifted, and channels bound to the ref still fire). Skip the
+  // fn-dispatch + diff machinery entirely.
+  if (cel.ref) {
+    if (suppression && changed) {
+      // A ref's "changed" signal is whether the source changed in
+      // this cycle. The cascade reaches us via the source → ref
+      // edge baked into `children` at precompute, so by the time we
+      // fire, source already lives in `changed`. Mark ourselves
+      // changed so our downstream consumers also re-fire.
+      let sourceChanged = cel.dynamic === true;
+      if (!sourceChanged && cel.ref) {
+        sourceChanged = changed.has(cel.ref.source);
+      }
+      if (sourceChanged) {
+        changed.add(cel.key);
+        enqueueChannels(cel, state, perfCtx);
+      } else if (perfCtx) {
+        recordSkip(state, perfCtx.currentWave);
+      }
+    } else {
+      // Full mode (boot from scratch) — always fire channels so a
+      // "paint everything" pass reaches ref cels too.
+      enqueueChannels(cel, state, perfCtx);
+    }
+    return;
+  }
+  if (!cel.l) return;
   // Per-cel compiled fn (e.g. formula cels) wins over the shared
   // registry lookup — same pattern as cel._isChanged.
   const fn = cel._fn ?? state.fns.get(cel.l);
@@ -165,22 +197,33 @@ const fireCel = (
   } else {
     const inputs: Record<string, unknown> = {};
     if (cel._inputEntries) {
-      // Fast: walk pre-resolved cel refs, read .v directly.
+      // Fast: walk pre-resolved cel refs, read .v directly. When an
+      // input cel is itself a ref cel (cel.ref set), resolve through
+      // the source slot. The branch is one property check — branch-
+      // predictable on the no-refs hot path.
       for (const [name, cs] of cel._inputEntries) {
         if (cs === undefined) {
           inputs[name] = undefined;
         } else if (Array.isArray(cs)) {
-          inputs[name] = cs.map((c) => c?.v);
+          inputs[name] = cs.map((c) => (c?.ref ? resolveValue(state, c) : c?.v));
         } else {
-          inputs[name] = cs.v;
+          inputs[name] = cs.ref ? resolveValue(state, cs) : cs.v;
         }
       }
     } else if (cel.inputMap) {
       // Fallback — cache not yet populated; resolve refs live.
-      for (const [name, ref] of Object.entries(cel.inputMap)) {
-        inputs[name] = Array.isArray(ref)
-          ? ref.map((k) => state.cels.get(k)?.v)
-          : state.cels.get(ref)?.v;
+      for (const [name, refKey] of Object.entries(cel.inputMap)) {
+        if (Array.isArray(refKey)) {
+          const arr: unknown[] = new Array(refKey.length);
+          for (let i = 0; i < refKey.length; i++) {
+            const c = state.cels.get(refKey[i]);
+            arr[i] = c?.ref ? resolveValue(state, c) : c?.v;
+          }
+          inputs[name] = arr;
+        } else {
+          const c = state.cels.get(refKey);
+          inputs[name] = c?.ref ? resolveValue(state, c) : c?.v;
+        }
       }
     }
     fnResult = fn(inputs);

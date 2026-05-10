@@ -7,6 +7,7 @@ import {
 } from "./input.js";
 import { flush } from "./flush.js";
 import { compileFormula, extractDeps } from "./formula.js";
+import { refCelByteLength, REF_CEL_BYTELENGTH_KEY } from "./refs.js";
 import { findDependents, getSegmentManifest, listSegments } from "./segments.js";
 import {
   CONFIG_ENVIRONMENT, STATS_CHANNELS, STATS_CYCLES, STATS_ENVIRONMENT,
@@ -194,6 +195,10 @@ const coreFnEntries: ReadonlyArray<CoreFnEntry> = [
   { key: "getSegmentManifest",      fn: getSegmentManifest as Fn, locked: true },
   { key: "listSegments",            fn: listSegments       as Fn, locked: true },
   { key: "findDependents",          fn: findDependents     as Fn, locked: true },
+  // Ref-cel byte estimator. Registered under the conventional key so
+  // host tooling can call it directly via state.fns; the perf-tracking
+  // accountant short-circuits on cel.ref before the registry lookup.
+  { key: REF_CEL_BYTELENGTH_KEY,    fn: refCelByteLength,        locked: true  },
   { key: "f",                       fn: formulaFn,               locked: false },
 ];
 

@@ -42,6 +42,11 @@ export {
 // Tag handler.
 export { bufferTag } from "./tag.js";
 
+// Slot accessor (used by ref cels) + consolidate helpers.
+export { columnSlotAccessor } from "./refs.js";
+export { consolidateInPlace, expandRefs } from "./consolidate.js";
+export type { ConsolidateOptions } from "./consolidate.js";
+
 // Operators + their key constants.
 export {
   COLUMN_FILTER_KEY, COLUMN_MAP_KEY, COLUMN_SUM_KEY, COLUMN_ZIP_KEY,

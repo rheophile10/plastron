@@ -4,6 +4,7 @@ import type {
 } from "../types/index.js";
 import { PRECOMPUTED_STATES_KEY, precompute, type PrecomputedIndexes } from "./precompute.js";
 import { compileCelBody, releaseValue } from "./hydrate.js";
+import { resolveValue, writeThroughRef } from "./refs.js";
 import { affectedFor, runCascade } from "./runCycle.js";
 
 // ----------------------------------------------------------------------------
@@ -95,15 +96,44 @@ export const flushChannels = async (
 //
 // Writes to a missing cel, a locked cel, or a lambda cel throw. Reads
 // of missing keys return undefined.
+//
+// Note (cel-refs / touch): the cel-refs spec contemplates a per-key
+// `touch(key)` that, when called on a ref cel, re-fires the source's
+// downstream cascade. The current kernel only exposes a keyless
+// `touch(state, opts?)` that fires the dynamic cascade with an empty
+// `changed` set, so there is no ref-aware touch path. Adding one would
+// require a new entry point that calls `affectedFor([key])` without
+// writing a value (and routes through the source key for refs).
+// Tracked as a v2 kernel addition; the cel-refs implementation does
+// NOT special-case touch.
 // ============================================================================
 
-const writeOne = (state: State, key: Key, value: unknown): void => {
+// Returns the key the cascade should fire from. For a ref cel, that's
+// the source key (writeThroughRef mutated the source slot, so the
+// cascade originates at the source). For a normal cel, it's the same
+// `key` passed in.
+const writeOne = (state: State, key: Key, value: unknown): Key => {
   const cel = state.cels.get(key);
   if (!cel)        throw new Error(`set: unknown cel "${key}"`);
   if (cel.locked)  throw new Error(`set: cel "${key}" is locked`);
   if (cel.l)       throw new Error(`set: cel "${key}" is a lambda — cannot write directly`);
+  if (cel.ref) {
+    // Route through the slot accessor. The accessor either mutates
+    // the source in place + bumps gen (Column / Matrix) or returns a
+    // new source value we install via writeOne on the source key
+    // (Table, plain object). Errors from a dangling source / missing
+    // accessor propagate to the caller.
+    const { sourceKey, replaced, newSourceValue } = writeThroughRef(state, cel, value);
+    if (replaced) {
+      // Wholesale replace via writeOne on the source — recursive
+      // handles its own validation, lock checks, and release.
+      return writeOne(state, sourceKey, newSourceValue);
+    }
+    return sourceKey;
+  }
   releaseValue(cel.v, cel.tag, state.tagRegistry);
   cel.v = value;
+  return key;
 };
 
 const fireDynamic = async (state: State): Promise<void> => {
@@ -112,7 +142,11 @@ const fireDynamic = async (state: State): Promise<void> => {
 };
 
 export const get: Fn = (state: State, key: Key) => {
-  return state.cels.get(key)?.v;
+  const cel = state.cels.get(key);
+  if (!cel) return undefined;
+  // Ref cels resolve through the source's slot; normal cels return v.
+  // The branch is one property check on the cel.
+  return cel.ref ? resolveValue(state, cel) : cel.v;
 };
 
 export interface SetOpts {
@@ -126,8 +160,8 @@ export interface SetOpts {
 export const set: Fn = async (
   state: State, key: Key, value: unknown, opts?: SetOpts,
 ) => {
-  writeOne(state, key, value);
-  await runCascade(state, affectedFor(state, [key]), new Set([key]));
+  const fired = writeOne(state, key, value);
+  await runCascade(state, affectedFor(state, [fired]), new Set([fired]));
   if (opts?.flush) await flushChannels(state, opts.flush);
   return state;
 };
@@ -135,9 +169,19 @@ export const set: Fn = async (
 export const batch: Fn = async (
   state: State, writes: Array<[Key, unknown]>, opts?: SetOpts,
 ) => {
-  const writtenKeys = writes.map(([k]) => k);
-  for (const [k, v] of writes) writeOne(state, k, v);
-  await runCascade(state, affectedFor(state, writtenKeys), new Set(writtenKeys));
+  // Ref-aware: writes targeting ref cels resolve to the source key,
+  // which is what the cascade fires from. When two writes in a batch
+  // hit different slots of the same source, writeOne is called
+  // sequentially (the accessor's write composes) and only the
+  // (deduplicated) source key drives the cascade. v1 makes no
+  // ordering guarantee beyond "in array order".
+  const firedKeys: Key[] = [];
+  const seen = new Set<Key>();
+  for (const [k, v] of writes) {
+    const fired = writeOne(state, k, v);
+    if (!seen.has(fired)) { seen.add(fired); firedKeys.push(fired); }
+  }
+  await runCascade(state, affectedFor(state, firedKeys), new Set(firedKeys));
   if (opts?.flush) await flushChannels(state, opts.flush);
   return state;
 };
@@ -162,10 +206,25 @@ export const batch: Fn = async (
 
 interface ApplyResult { topoChanged: boolean; }
 
-/** Mutate a single cel's {v, f, l} slots atomically. Pre-flight runs
- *  before any write so a thrown error leaves the cel intact. Returns
- *  whether the topology may have shifted (setCelBatch uses this to
- *  decide whether to re-run precompute once at the end). */
+/** Mutate a single cel's {v, f, l, ref} slots atomically. Pre-flight
+ *  runs before any write so a thrown error leaves the cel intact.
+ *  Returns whether the topology may have shifted (setCelBatch uses
+ *  this to decide whether to re-run precompute once at the end).
+ *
+ *  Ref-cel rules:
+ *    • triple.ref === <CelRef>  installs a ref. Any v in the same
+ *                                triple must be undefined / null
+ *                                (refs hold no local value); any f/l
+ *                                must be cleared in the same triple
+ *                                (refs aren't compute cels).
+ *    • triple.ref === null      clears any existing ref. Pair with
+ *                                v: <value> to convert back to a
+ *                                scalar cel atomically.
+ *    • A cel that already has cel.ref set refuses bare v writes —
+ *                                use input.set (which routes through
+ *                                writeThroughRef) for slot writes,
+ *                                or pass ref: null + v: ... here to
+ *                                rewrite as a scalar. */
 const applyTripleAtomic = (
   state: State, key: Key, triple: CelTriple,
 ): ApplyResult => {
@@ -173,15 +232,27 @@ const applyTripleAtomic = (
   if (!cel)       throw new Error(`setCel: unknown cel "${key}"`);
   if (cel.locked) throw new Error(`setCel: cel "${key}" is locked`);
 
-  const fInTriple = "f" in triple;
-  const lInTriple = "l" in triple;
-  const vInTriple = "v" in triple;
+  const fInTriple   = "f"   in triple;
+  const lInTriple   = "l"   in triple;
+  const vInTriple   = "v"   in triple;
+  const refInTriple = "ref" in triple;
 
-  // Resolve the post-update f/l values. null means clear; undefined
+  // Resolve the post-update f/l/ref values. null means clear; undefined
   // (i.e. field absent) means leave alone.
-  const newF = fInTriple ? triple.f : cel.f;
-  const newL = lInTriple ? triple.l : cel.l;
-  const willHaveSource = newF != null;
+  const newF   = fInTriple   ? triple.f   : cel.f;
+  const newL   = lInTriple   ? triple.l   : cel.l;
+  const newRef = refInTriple ? triple.ref : cel.ref;
+  const willHaveSource  = newF != null;
+  const willHaveRef     = newRef != null;
+  const willHaveLambda  = (lInTriple ? newL != null : cel.l !== undefined);
+
+  // Refs are mutually exclusive with f / l on the same cel.
+  if (willHaveRef && (willHaveSource || willHaveLambda)) {
+    throw new Error(
+      `setCel: cel "${key}" cannot be both a ref and a compute cel. ` +
+      `Clear f/l in the same triple to install ref.`,
+    );
+  }
 
   // Pre-flight: resolve compiler before mutating. Missing compiler
   // aborts with the cel still in its original state.
@@ -197,14 +268,32 @@ const applyTripleAtomic = (
   // Reject "set v on a cel that still has a compute path." A lambda
   // cel's v is derived. The only legal pattern is to remove the
   // compute path in the same triple (l: null + f: null + v: 42).
-  if (vInTriple) {
-    const willHaveCompute =
-      (willHaveSource) ||
-      (lInTriple ? newL != null : cel.l !== undefined);
+  // Ditto for refs: a ref cel's v is meaningless; setting it requires
+  // clearing the ref atomically.
+  if (vInTriple && triple.v !== undefined && triple.v !== null) {
+    const willHaveCompute = willHaveSource || willHaveLambda;
     if (willHaveCompute) {
       throw new Error(
         `setCel: cannot set v on "${key}" — has a compute path. ` +
         `Clear l/f in the same triple to convert into a value cel.`,
+      );
+    }
+    if (willHaveRef) {
+      throw new Error(
+        `setCel: cannot set v on "${key}" — is a ref cel. ` +
+        `Pass ref: null in the same triple to convert into a value cel, ` +
+        `or use input.set to write through the ref's source slot.`,
+      );
+    }
+  }
+
+  // Validate the incoming ref against state — source must exist.
+  // Slot range is checked at write time (the source's value may not
+  // have materialized yet at hydrate time for cross-segment refs).
+  if (refInTriple && newRef) {
+    if (!state.cels.has(newRef.source)) {
+      throw new Error(
+        `setCel: ref source "${newRef.source}" for cel "${key}" not in state.cels`,
       );
     }
   }
@@ -228,17 +317,41 @@ const applyTripleAtomic = (
       if (lInTriple || fInTriple) topoChanged = true;
     }
   }
+  if (refInTriple) {
+    if (newRef) {
+      // Installing a ref — clear v if the cel still owns one.
+      if (cel.v !== undefined && cel.v !== null) {
+        releaseValue(cel.v, cel.tag, state.tagRegistry);
+        cel.v = undefined;
+      }
+      cel.ref = newRef;
+      topoChanged = true;
+    } else {
+      // Clearing the ref.
+      if (cel.ref !== undefined) topoChanged = true;
+      cel.ref = undefined;
+    }
+  }
   if (vInTriple) {
+    // For a ref cel, v writes already errored above unless v is
+    // undefined / null. For a normal cel, install the new value.
     releaseValue(cel.v, cel.tag, state.tagRegistry);
     cel.v = triple.v;
+  }
+  // Final consistency: a cel must not end with both ref and v after the
+  // mutation (defensive — the pre-flight already covered every legal
+  // path; this catches partial-update bugs early).
+  if (cel.ref && cel.v !== undefined && cel.v !== null) {
+    cel.v = undefined;
   }
   return { topoChanged };
 };
 
 const readTriple = (cel: Cel): CelTriple => {
   const out: CelTriple = { v: cel.v };
-  if (cel.f !== undefined) out.f = cel.f;
-  if (cel.l !== undefined) out.l = cel.l;
+  if (cel.f   !== undefined) out.f   = cel.f;
+  if (cel.l   !== undefined) out.l   = cel.l;
+  if (cel.ref !== undefined) out.ref = cel.ref;
   return out;
 };
 

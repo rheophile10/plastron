@@ -1,4 +1,5 @@
-import type { CompiledLambda, Fn, Key, ResolvedInputs } from "../types/index.js";
+import type { Cel, CompiledLambda, Fn, Key, ResolvedInputs, State } from "../types/index.js";
+import { resolveValue } from "./refs.js";
 
 // ============================================================================
 // S-expression formula parser + compiler.
@@ -34,6 +35,14 @@ import type { CompiledLambda, Fn, Key, ResolvedInputs } from "../types/index.js"
 //                         blocks new Function or the formula uses
 //                         array-typed inputs (which the codegen path
 //                         doesn't emit for)
+//                     Both paths emit ref-aware reads: every cel-value
+//                     access goes through `(c.ref ? resolveValue(state,
+//                     c) : c.v)`, mirroring the slow-gather path in
+//                     runCycle.ts. This lets a downstream formula keep
+//                     the codegen fast path even after one of its inputs
+//                     was consolidated into a Column / Matrix / Table
+//                     and turned into a ref cel — the central
+//                     transparency promise of cel-refs.
 // ============================================================================
 
 type SExp = number | string | SExp[];
@@ -139,20 +148,35 @@ const CODEGEN_AVAILABLE: boolean = (() => {
   }
 })();
 
+// Read a single cel through any ref. Mirrors the runCycle slow-gather
+// pattern (`cs?.ref ? resolveValue(state, cs) : cs.v`) so the AST-walk
+// and codegen paths agree on ref semantics — codegen below inlines the
+// same expression directly into emitted JS to avoid the call overhead
+// on the hot path. Used by the AST-walk fallback only.
+const readCelValue = (state: State, cel: Cel | undefined): unknown => {
+  if (cel === undefined) return undefined;
+  if (cel.ref) return resolveValue(state, cel);
+  return cel.v;
+};
+
 // Walk the AST against resolved cels — same shape as `evaluate` but
-// reads cel.v inline rather than from a pre-built inputs record.
+// reads cel values inline rather than from a pre-built inputs record.
 // Used by buildEvaluate when codegen isn't available or the formula
 // uses array-typed inputs (which the codegen path doesn't emit for).
+// Inputs that resolved to ref cels are read through resolveValue so
+// downstream formulas keep working transparently when an upstream
+// value was consolidated into a column / matrix / table.
 const evaluateAgainstCels = (
   exp: SExp,
+  state: State,
   cels: ResolvedInputs,
 ): unknown => {
   if (typeof exp === "number") return exp;
   if (typeof exp === "string") {
     const c = cels[exp];
     if (c === undefined) return undefined;
-    if (Array.isArray(c)) return c.map((x) => x?.v);
-    return c.v;
+    if (Array.isArray(c)) return c.map((x) => readCelValue(state, x));
+    return readCelValue(state, c);
   }
   if (!Array.isArray(exp) || exp.length === 0) return null;
 
@@ -160,12 +184,12 @@ const evaluateAgainstCels = (
   if (typeof head !== "string") {
     throw new Error(`Cannot call non-symbol head: ${JSON.stringify(head)}`);
   }
-  const args = exp.slice(1).map((a) => evaluateAgainstCels(a, cels));
+  const args = exp.slice(1).map((a) => evaluateAgainstCels(a, state, cels));
 
   if (head in BUILTINS) return BUILTINS[head](args);
 
   const c = cels[head];
-  const fn = (c !== undefined && !Array.isArray(c)) ? c.v : undefined;
+  const fn = (c !== undefined && !Array.isArray(c)) ? readCelValue(state, c) : undefined;
   if (typeof fn !== "function") {
     throw new Error(`Formula references "${head}" but it isn't a function or builtin.`);
   }
@@ -174,23 +198,35 @@ const evaluateAgainstCels = (
 
 // Generate a JS expression body for the AST. Each unique symbol becomes
 // a closure parameter `c0`, `c1`, …; references in the expression read
-// `cN.v`. Function calls compile to `cN.v(arg, …)`. Builtins emit raw
-// arithmetic with Number() coercion to preserve the interpreter's
-// behavior on string inputs.
+// the cel's value. Function calls compile to a call on the cel's value.
+// Builtins emit raw arithmetic with Number() coercion to preserve the
+// interpreter's behavior on string inputs.
+//
+// Ref-aware reads: every emitted value read goes through
+// `(cN.ref?_r(_s,cN):cN.v)` rather than a bare `cN.v`. The check is one
+// property load on the no-ref hot path (branch-predictable, JIT-inlined)
+// and resolves through `resolveValue(state, cN)` only when the input is
+// a ref cel. `_r` and `_s` are extra captured params injected by
+// buildEvaluateFor below — `_r` is `resolveValue` and `_s` is the live
+// state. This is the codegen counterpart to the slow-gather path's
+// `cs?.ref ? resolveValue(state, cs) : cs.v` in runCycle.ts; without it,
+// consolidating any upstream value would silently disable the codegen
+// fast path for every formula that reads it.
 const generateBody = (
   ast: SExp,
 ): { body: string; symbols: string[] } => {
   const symbols: string[] = [];
   const symbolIndex = new Map<string, number>();
   const indexFor = (name: string): number => {
-    let i = symbolIndex.get(name);
-    if (i === undefined) {
-      i = symbols.length;
-      symbolIndex.set(name, i);
-      symbols.push(name);
-    }
+    let i = symbols.length;
+    const existing = symbolIndex.get(name);
+    if (existing !== undefined) return existing;
+    symbolIndex.set(name, i);
+    symbols.push(name);
     return i;
   };
+
+  const readVar = (i: number): string => `(c${i}.ref?_r(_s,c${i}):c${i}.v)`;
 
   const gen = (exp: SExp): string => {
     if (typeof exp === "number") return JSON.stringify(exp);
@@ -200,7 +236,7 @@ const generateBody = (
         // Fall back to AST walk for this formula by signalling.
         throw new Error(`Builtin "${exp}" used as a value`);
       }
-      return `c${indexFor(exp)}.v`;
+      return readVar(indexFor(exp));
     }
     if (!Array.isArray(exp) || exp.length === 0) return "null";
 
@@ -228,7 +264,7 @@ const generateBody = (
       if (args.length === 1) return `(1/Number(${args[0]}))`;
       return `(${args.map((a) => `Number(${a})`).join("/")})`;
     }
-    return `c${indexFor(head)}.v(${args.join(",")})`;
+    return `${readVar(indexFor(head))}(${args.join(",")})`;
   };
 
   return { body: gen(ast), symbols };
@@ -241,7 +277,11 @@ const hasArrayInput = (cels: ResolvedInputs, symbols: string[]): boolean => {
   return false;
 };
 
-const buildEvaluateFor = (ast: SExp, cels: ResolvedInputs): (() => unknown) => {
+const buildEvaluateFor = (
+  ast: SExp,
+  state: State,
+  cels: ResolvedInputs,
+): (() => unknown) => {
   if (CODEGEN_AVAILABLE) {
     let body: string;
     let symbols: string[];
@@ -250,25 +290,30 @@ const buildEvaluateFor = (ast: SExp, cels: ResolvedInputs): (() => unknown) => {
     } catch {
       // Codegen-side limitation (e.g. bare builtin) — fall through to
       // AST walk, which handles the same edge cases consistently.
-      return () => evaluateAgainstCels(ast, cels);
+      return () => evaluateAgainstCels(ast, state, cels);
     }
     // Codegen output assumes scalar refs. If any input resolved to an
     // array, fall back to the AST walk which handles arrays correctly.
     if (hasArrayInput(cels, symbols)) {
-      return () => evaluateAgainstCels(ast, cels);
+      return () => evaluateAgainstCels(ast, state, cels);
     }
+    // Param order: cN bindings first, then `_r` (resolveValue) and `_s`
+    // (state). Captured by the factory so the emitted body can inline
+    // the ref check `(cN.ref?_r(_s,cN):cN.v)` without per-fire lookups.
     const params = symbols.map((_, i) => `c${i}`);
+    params.push("_r", "_s");
     // eslint-disable-next-line @typescript-eslint/no-implied-eval, no-new-func
     const factory = new Function(
       ...params,
       `"use strict"; return function evaluate() { return ${body}; };`,
     );
-    const args = symbols.map((name) => cels[name]);
+    const args: unknown[] = symbols.map((name) => cels[name]);
+    args.push(resolveValue, state);
     return factory(...args) as () => unknown;
   }
   // CSP-blocked: AST walk against resolved cels. Still beats today
   // because it skips Object.entries + per-fire cel lookups.
-  return () => evaluateAgainstCels(ast, cels);
+  return () => evaluateAgainstCels(ast, state, cels);
 };
 
 /** Parse a formula once; return the runtime body + buildEvaluate hook
@@ -278,6 +323,7 @@ export const compileFormula = (src: string): CompiledLambda => {
   const fn: Fn = (inputs: Record<string, unknown>) => evaluate(ast, inputs);
   return {
     fn,
-    buildEvaluate: (cels: ResolvedInputs) => buildEvaluateFor(ast, cels),
+    buildEvaluate: (state: State, cels: ResolvedInputs) =>
+      buildEvaluateFor(ast, state, cels),
   };
 };

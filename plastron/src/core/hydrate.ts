@@ -8,6 +8,7 @@ import {
   PRECOMPUTED_STATES_KEY, bfsDownstream, precompute,
   type PrecomputedIndexes,
 } from "./precompute.js";
+import { validateRef } from "./refs.js";
 import { dehydrateSchemas, hydrateSchemas } from "./schema-conversion.js";
 import { satisfies } from "./segments.js";
 import {
@@ -110,7 +111,10 @@ const inflate = (
   schemas: Map<SchemaKey, z.ZodType>,
   fns: Map<LambdaKey, Fn>,
 ): Cel => {
-  const cel: Cel = { key: dc.key, v: dc.v ?? null };
+  // Ref cels never carry their own v — force null regardless of what
+  // the dehydrated form happened to ship. Reads always resolve through
+  // the source slot.
+  const cel: Cel = { key: dc.key, v: dc.ref ? null : (dc.v ?? null) };
   if (dc.l        !== undefined) cel.l        = dc.l;
   if (dc.inputMap !== undefined) cel.inputMap = dc.inputMap;
   if (dc.segment  !== undefined) cel.segment  = dc.segment;
@@ -123,7 +127,9 @@ const inflate = (
   if (dc.dynamic  !== undefined) cel.dynamic  = dc.dynamic;
   if (dc.tag      !== undefined) cel.tag      = dc.tag;
   if (dc.channel  !== undefined) cel.channel  = dc.channel;
-  if (dc.f        !== undefined) {
+  if (dc.ref      !== undefined) cel.ref      = dc.ref;
+  if (dc.f        !== undefined && !dc.ref) {
+    // Compile only when not a ref. Ref cels have no fn body.
     cel.f = dc.f;
     compileCelBody(cel, fns);
   }
@@ -153,6 +159,7 @@ const deflate = (
   if (c.f        !== undefined) dc.f        = c.f;
   if (c.tag      !== undefined) dc.tag      = c.tag;
   if (c.channel  !== undefined) dc.channel  = c.channel;
+  if (c.ref      !== undefined) dc.ref      = c.ref;
   return dc;
 };
 
@@ -281,6 +288,23 @@ export const hydrate: Hydrate = (state, segments, fns) => {
       if (existing) disposeCel(existing, state.tagRegistry);
       state.cels.set(dc.key, inflate(dc, state.schemas, state.fns));
     }
+  }
+
+  // Pass 2b — validate ref cels deferred until every segment is in.
+  // Cross-segment refs (source in one segment, ref cel in another) can
+  // be hydrated in either order — we only check after the whole hydrate
+  // call settles. Dangling refs are warnings, not errors: the cel
+  // stays in state.cels and reads return undefined (intentional v1
+  // policy). The host can detect dangles via console output or by
+  // walking state.cels for cel.ref + missing source.
+  const warnRef = (msg: string): void => {
+    const c = (globalThis as { console?: { warn?: (m: string) => void } }).console;
+    if (c?.warn) c.warn(msg);
+  };
+  for (const cel of state.cels.values()) {
+    if (!cel.ref) continue;
+    const err = validateRef(state, cel);
+    if (err) warnRef(`hydrate: ref cel "${cel.key}" — ${err}`);
   }
 
   // Materialize cel._isChanged and cel._diffFn from schemaMetadata.

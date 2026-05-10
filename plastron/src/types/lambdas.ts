@@ -1,4 +1,4 @@
-import type { Key } from "./index.js";
+import type { Key, State } from "./index.js";
 import type { Cel } from "./cels.js";
 import type { SchemaKey } from "./schemas.js";
 
@@ -56,6 +56,11 @@ export interface Fn<_I = unknown, O = unknown> {
 //                     async optional precompute pass awaits before
 //                     storing the closure on cel._evaluate.
 //
+//                     Receives the live `state` so the emitted closure
+//                     can resolve through ref cels (cel.ref) at fire
+//                     time without re-doing per-fire registry lookups.
+//                     Compilers that don't read refs may ignore it.
+//
 //                     Compilers that don't supply this are unaffected —
 //                     fireCel falls through to the standard gather-and-
 //                     call path.
@@ -64,7 +69,7 @@ export interface Fn<_I = unknown, O = unknown> {
 export interface CompiledEnvelope {
   fn: Fn;
   dispose?: () => void;
-  buildEvaluate?: (inputs: ResolvedInputs) => (() => unknown) | Promise<() => unknown>;
+  buildEvaluate?: (state: State, inputs: ResolvedInputs) => (() => unknown) | Promise<() => unknown>;
 }
 
 export type CompiledLambda = Fn | CompiledEnvelope;

@@ -18,9 +18,10 @@
 // ============================================================================
 
 import type { z } from "zod";
-import type { Cel, DehydratedCel } from "./cels.js";
+import type { Cel, CelRef, DehydratedCel } from "./cels.js";
 import type { ChannelKey, ChannelHandler } from "./channels.js";
 import type { Fn, LambdaKey, LambdaMetadata } from "./lambdas.js";
+import type { SlotAccessor } from "./refs.js";
 import type { SchemaKey, SchemaMetadata } from "./schemas.js";
 import type { SegmentManifest } from "./segments.js";
 import type { TagKey, TagHandler } from "./tags.js";
@@ -74,6 +75,13 @@ export interface State {
   /** Per-format protocols for opaque values. Tag handlers don't
    *  round-trip through JSON — host code installs them at runtime. */
   tagRegistry: Map<TagKey, TagHandler>;
+  /** Per-source-shape slot accessors used by ref cels. Keyed by the
+   *  source cel's TagKey; `null` (the literal map key absence) falls
+   *  back to default accessors that handle plain arrays / objects.
+   *  Like tagRegistry, accessors don't round-trip through JSON —
+   *  segments install them at runtime via their installX(state) entry
+   *  point. See plastron/src/core/refs.ts. */
+  slotAccessors: Map<TagKey, SlotAccessor>;
   /** Runtime cleanup hooks for registered fns. Populated when a
    *  compiler returns the {fn, dispose} envelope (a WASM instance, a
    *  worker, an FFI handle, …). Fired when the entry is overwritten
@@ -187,6 +195,12 @@ export interface CelTriple {
   v?: unknown;
   f?: string | null;
   l?: LambdaKey | null;
+  /** Ref-cel slot. `null` clears the ref (cel becomes a normal value
+   *  cel again — pair with `v: ...` in the same triple to install the
+   *  scalar value atomically). A concrete CelRef installs the ref
+   *  (pair with `v: undefined` and `l: null` / `f: null` if converting
+   *  from a value or lambda cel). Mutually exclusive with f/l. */
+  ref?: CelRef | null;
 }
 
 // ============================================================================
@@ -239,9 +253,10 @@ export interface RegisterLambdaArgs {
   schemaMetadata?: Record<SchemaKey, SchemaMetadata>;
 }
 
-export type { Cel, DehydratedCel } from "./cels.js";
+export type { Cel, CelRef, DehydratedCel } from "./cels.js";
 export type { ChannelKey, ChannelHandler, ChannelEnqueue } from "./channels.js";
 export type { Fn, LambdaKey, LambdaMetadata, Compiler, CompiledLambda, CompiledEnvelope, ResolvedInputs } from "./lambdas.js";
+export type { SlotAccessor } from "./refs.js";
 export type { SchemaKey, SchemaMetadata, WasmLayout, DehydrateSchemas, HydrateSchemas } from "./schemas.js";
 export type { SegmentDependency, SegmentProvides, SegmentManifest } from "./segments.js";
 export type { TagKey, TagHandler } from "./tags.js";

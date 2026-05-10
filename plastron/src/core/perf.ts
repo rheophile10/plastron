@@ -33,6 +33,7 @@ import type {
   Cel, ChannelHandler, ChannelKey, Key, LambdaKey, State,
 } from "../types/index.js";
 import { estimateBytes } from "./perf-bytes.js";
+import { REF_CEL_BYTES } from "./refs.js";
 
 // ── Cel keys ────────────────────────────────────────────────────────────────
 
@@ -365,6 +366,12 @@ export interface PrecomputeSnapshot {
 }
 
 const sizeOfCel = (cel: Cel, state: State): number => {
+  // 0. Ref cels have a fixed small footprint (no local v, no _fn,
+  //    no _evaluate, no _inputEntries). Their schema's byteLength
+  //    would double-count the source's column, so we short-circuit
+  //    here BEFORE consulting tag / schema estimators. The source's
+  //    own size is reported separately when we walk the source cel.
+  if (cel.ref) return REF_CEL_BYTES;
   if (cel.v == null) return 0;
   // 1. tag handler
   if (cel.tag !== undefined) {
