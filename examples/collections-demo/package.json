@@ -1,0 +1,20 @@
+{
+  "name": "collections-demo",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Demo of plastron-collections — packs scalar cels into Column / Table envelopes, runs a few operator lambdas, prints memory comparison and a smoke check that gen-counter isChanged works.",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "smoke": "tsx src/smoke.ts",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.2",
+    "tsx": "^4.19.2",
+    "typescript": "~5.9.3"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  }
+}
