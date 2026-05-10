@@ -1,0 +1,24 @@
+{
+  "name": "plastron-sqlite",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "SQLite adapter for plastron `.甲` archives — Node (better-sqlite3) and browser (sqlite-wasm + OPFS), with a migrations-as-segment runner.",
+  "main": "src/index.ts",
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "better-sqlite3": "^11.0.0",
+    "@sqlite.org/sqlite-wasm": "^3.45.0"
+  },
+  "peerDependenciesMeta": {
+    "better-sqlite3": { "optional": true },
+    "@sqlite.org/sqlite-wasm": { "optional": true }
+  },
+  "devDependencies": {
+    "@types/better-sqlite3": "^7.6.10",
+    "@types/node": "^25.6.2",
+    "typescript": "~5.9.3"
+  }
+}
