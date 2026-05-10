@@ -62,8 +62,63 @@ const BUILTINS: Record<string, (args: unknown[]) => number> = {
   },
 };
 
-const tokenize = (src: string): string[] =>
-  src.replace(/\(/g, " ( ").replace(/\)/g, " ) ").trim().split(/\s+/).filter(Boolean);
+// Tokenizer with string-literal support. Strings are double-quoted and
+// support `\\`, `\"`, `\n`, `\t`, `\r` escapes. The decoded contents
+// are returned as a single token with the quotes preserved (the parser
+// uses the leading `"` as the marker that distinguishes a literal from
+// a symbol). Whitespace, parens, and `"` are token boundaries; nothing
+// else is. Bare atoms `null`, `true`, `false` get their JS-equivalent
+// values at evaluate / codegen time — they collide with cel keys of
+// the same name, but reserving those words is the standard cost.
+const tokenize = (src: string): string[] => {
+  const tokens: string[] = [];
+  const n = src.length;
+  let i = 0;
+  while (i < n) {
+    const c = src[i]!;
+    if (c === " " || c === "\t" || c === "\n" || c === "\r") { i++; continue; }
+    if (c === "(" || c === ")") { tokens.push(c); i++; continue; }
+    if (c === '"') {
+      let j = i + 1;
+      let s = '"';
+      let closed = false;
+      while (j < n) {
+        const k = src[j]!;
+        if (k === "\\" && j + 1 < n) {
+          const e = src[j + 1]!;
+          if (e === "n") s += "\n";
+          else if (e === "t") s += "\t";
+          else if (e === "r") s += "\r";
+          else s += e;            // covers \\, \", and any other passthrough
+          j += 2;
+          continue;
+        }
+        if (k === '"') { s += '"'; j++; closed = true; break; }
+        s += k;
+        j++;
+      }
+      if (!closed) throw new Error(`Unterminated string in formula "${src}"`);
+      tokens.push(s);
+      i = j;
+      continue;
+    }
+    // Bare atom — symbol, number, or reserved literal (null/true/false).
+    let j = i;
+    while (j < n) {
+      const k = src[j]!;
+      if (k === " " || k === "\t" || k === "\n" || k === "\r" ||
+          k === "(" || k === ")" || k === '"') break;
+      j++;
+    }
+    tokens.push(src.slice(i, j));
+    i = j;
+  }
+  return tokens;
+};
+
+// Helpers for the literal-detection sigils used in SExp strings.
+const isStringLit = (s: string): boolean =>
+  s.length >= 2 && s.charCodeAt(0) === 34 && s.charCodeAt(s.length - 1) === 34;
 
 const parse = (src: string): SExp => {
   const tokens = tokenize(src);
@@ -95,7 +150,13 @@ const parse = (src: string): SExp => {
 
 const evaluate = (exp: SExp, inputs: Record<string, unknown>): unknown => {
   if (typeof exp === "number") return exp;
-  if (typeof exp === "string") return inputs[exp];
+  if (typeof exp === "string") {
+    if (exp === "null")  return null;
+    if (exp === "true")  return true;
+    if (exp === "false") return false;
+    if (isStringLit(exp)) return exp.slice(1, -1);
+    return inputs[exp];
+  }
   if (exp.length === 0) return null;
 
   const head = exp[0];
@@ -122,6 +183,8 @@ export const extractDeps = (src: string): Key[] => {
   const out: Key[] = [];
   const visit = (e: SExp): void => {
     if (typeof e === "string") {
+      if (e === "null" || e === "true" || e === "false") return;
+      if (isStringLit(e)) return;
       if (e in BUILTINS || seen.has(e)) return;
       seen.add(e);
       out.push(e);
@@ -173,6 +236,10 @@ const evaluateAgainstCels = (
 ): unknown => {
   if (typeof exp === "number") return exp;
   if (typeof exp === "string") {
+    if (exp === "null")  return null;
+    if (exp === "true")  return true;
+    if (exp === "false") return false;
+    if (isStringLit(exp)) return exp.slice(1, -1);
     const c = cels[exp];
     if (c === undefined) return undefined;
     if (Array.isArray(c)) return c.map((x) => readCelValue(state, x));
@@ -231,6 +298,12 @@ const generateBody = (
   const gen = (exp: SExp): string => {
     if (typeof exp === "number") return JSON.stringify(exp);
     if (typeof exp === "string") {
+      if (exp === "null")  return "null";
+      if (exp === "true")  return "true";
+      if (exp === "false") return "false";
+      // Re-encode through JSON.stringify so embedded newlines / quotes
+      // produce valid JS source rather than raw control characters.
+      if (isStringLit(exp)) return JSON.stringify(exp.slice(1, -1));
       if (exp in BUILTINS) {
         // Builtin appearing bare (not as list head) is degenerate.
         // Fall back to AST walk for this formula by signalling.
