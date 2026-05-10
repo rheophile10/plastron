@@ -1,22 +1,21 @@
 import type { Fn, LambdaKey, State } from "../../../../plastron/src/types/index.js";
-import { el, type VNode } from "../../../../segments/plastron-dom/src/index.js";
 import type { SegmentBundle } from "./counter.js";
 
 // ========================================================================
-// Weather segment.
+// Weather segment — formula-driven render, action lambdas in JS.
 //
-// Two primitive cels (weatherCity, weatherData) and one render lambda.
-// All actions live in dispatch handlers:
+// Render tree composed entirely from formulas referencing dom-builders
+// (el, h2, p, div, input, button, strong, obj, onSet, onDispatch,
+// concat, ifx, eq).
 //
-//   weather:setCity — onInput. Reads event.target.value (3rd arg from
-//                     the painter), writes weatherCity.
-//   weather:fetch   — onClick. Reads weatherCity, fires the async
-//                     Open-Meteo lookup, writes intermediate
-//                     "loading" state and final result back into
-//                     weatherData via setFn.
+// Async actions (setCity, fetchAction) stay as JS lambdas — formulas
+// aren't the right shape for fetch + await + multi-step state mutation.
+// They're referenced by name in the render formulas via onDispatch.
 //
-// No side-effecting lambda. No closure-tracked event refs. The render
-// lambda is pure (data → VNode).
+// State branching uses (ifx (eq state "ok") okNode (ifx (eq state
+// "loading") loadingNode …)). Both branches evaluate (no short-
+// circuiting) but the cost is just building two vnode subtrees, which
+// is fine.
 // ========================================================================
 
 const DEFAULT_CITY = "Berlin";
@@ -70,36 +69,20 @@ const codeToText = (code: number): string => {
   return "unknown";
 };
 
-const renderWeather: Fn = ({ city, data }: { city: string; data: WeatherData }): VNode => {
-  let resultNode: VNode;
-  if (data.state === "idle") {
-    resultNode = el("p", { class: "result idle" }, "Type a city and click Fetch.");
-  } else if (data.state === "loading") {
-    resultNode = el("p", { class: "result loading" }, `Loading ${data.city}…`);
-  } else if (data.state === "error") {
-    resultNode = el("p", { class: "result error" }, `Error: ${data.message}`);
-  } else {
-    resultNode = el("p", { class: "result ok" },
-      el("strong", null, `${data.city}, ${data.country}`),
-      ` — ${data.temperatureC.toFixed(1)} °C, ${codeToText(data.weatherCode)}`,
-    );
-  }
+// Helpers exposed as cel values so the render formulas can pluck
+// fields from the WeatherData record. The formula language has no
+// property access; these stand in.
+const weatherStateOf = (d: WeatherData): string => d.state;
+const weatherCityOf  = (d: WeatherData): string =>
+  d.state === "ok" ? d.city : d.state === "loading" ? d.city : "";
+const weatherCountryOf = (d: WeatherData): string => d.state === "ok" ? d.country : "";
+const weatherTempOf  = (d: WeatherData): string =>
+  d.state === "ok" ? d.temperatureC.toFixed(1) : "";
+const weatherCondOf  = (d: WeatherData): string =>
+  d.state === "ok" ? codeToText(d.weatherCode) : "";
+const weatherErrorOf = (d: WeatherData): string => d.state === "error" ? d.message : "";
 
-  return el("section", { class: "weather" },
-    el("h2", null, "Weather"),
-    el("div", { class: "row" },
-      el("input", {
-        type: "text",
-        placeholder: "City",
-        value: city,
-        onInput: { dispatch: "weather:setCity" },
-      }),
-      el("button", { onClick: { dispatch: "weather:fetch" } }, "Fetch"),
-    ),
-    resultNode,
-  );
-};
-
+// Async action lambdas — referenced by name from formulas.
 const setCity: Fn = async (...args: unknown[]) => {
   const [state, , event] = args as [State, unknown, Event];
   const target = event?.target as { value?: string } | null;
@@ -131,18 +114,118 @@ export const weatherSegment: SegmentBundle = {
   segment: {
     key: "weather",
     cels: [
+      // Data
       { key: "weatherCity", v: DEFAULT_CITY, segment: "weather" },
       { key: "weatherData", v: { state: "idle" } as WeatherData, segment: "weather" },
+      // Selectors over WeatherData (function values for formula access)
+      { key: "weatherStateOf",   v: weatherStateOf,   segment: "weather" },
+      { key: "weatherCityOf",    v: weatherCityOf,    segment: "weather" },
+      { key: "weatherCountryOf", v: weatherCountryOf, segment: "weather" },
+      { key: "weatherTempOf",    v: weatherTempOf,    segment: "weather" },
+      { key: "weatherCondOf",    v: weatherCondOf,    segment: "weather" },
+      { key: "weatherErrorOf",   v: weatherErrorOf,   segment: "weather" },
+      // Derived state
+      { key: "weatherState",   l: "f", f: "(weatherStateOf weatherData)",          segment: "weather" },
+      { key: "weatherCityNow", l: "f", f: "(weatherCityOf  weatherData)",          segment: "weather" },
+      { key: "weatherTemp",    l: "f", f: "(weatherTempOf  weatherData)",          segment: "weather" },
+      { key: "weatherCond",    l: "f", f: "(weatherCondOf  weatherData)",          segment: "weather" },
+      { key: "weatherCountry", l: "f", f: "(weatherCountryOf weatherData)",        segment: "weather" },
+      { key: "weatherErr",     l: "f", f: "(weatherErrorOf  weatherData)",         segment: "weather" },
+      // Per-state result-paragraph subtrees
+      {
+        key: "resultIdle",
+        l: "f",
+        f: '(dom "p" (obj "class" "result idle") "Type a city and click Fetch.")',
+        segment: "weather",
+      },
+      {
+        key: "resultLoadingText",
+        l: "f",
+        f: '(concat "Loading " weatherCityNow "…")',
+        segment: "weather",
+      },
+      {
+        key: "resultLoading",
+        l: "f",
+        f: '(dom "p" (obj "class" "result loading") resultLoadingText)',
+        segment: "weather",
+      },
+      {
+        key: "resultErrorText",
+        l: "f",
+        f: '(concat "Error: " weatherErr)',
+        segment: "weather",
+      },
+      {
+        key: "resultError",
+        l: "f",
+        f: '(dom "p" (obj "class" "result error") resultErrorText)',
+        segment: "weather",
+      },
+      {
+        key: "resultOkLocation",
+        l: "f",
+        f: '(dom "strong" null (concat weatherCityNow ", " weatherCountry))',
+        segment: "weather",
+      },
+      {
+        key: "resultOkSuffix",
+        l: "f",
+        f: '(concat " — " weatherTemp " °C, " weatherCond)',
+        segment: "weather",
+      },
+      {
+        key: "resultOk",
+        l: "f",
+        f: '(dom "p" (obj "class" "result ok") resultOkLocation resultOkSuffix)',
+        segment: "weather",
+      },
+      // Branch on weatherState. Both branches evaluate; only the
+      // selected one ends up in the rendered tree.
+      {
+        key: "resultNode",
+        l: "f",
+        f: '(ifx (eq weatherState "ok") resultOk ' +
+              '(ifx (eq weatherState "loading") resultLoading ' +
+                '(ifx (eq weatherState "error") resultError resultIdle)))',
+        segment: "weather",
+      },
+      // Input row
+      {
+        key: "weatherInput",
+        l: "f",
+        f: '(dom "input" (obj "type" "text" "placeholder" "City" "value" weatherCity ' +
+                            '"onInput" (onSet "weatherCity")))',
+        segment: "weather",
+      },
+      {
+        key: "weatherButton",
+        l: "f",
+        f: '(dom "button" (obj "onClick" (onDispatch "weather:fetch")) "Fetch")',
+        segment: "weather",
+      },
+      {
+        key: "weatherRow",
+        l: "f",
+        f: '(dom "div" (obj "class" "row") weatherInput weatherButton)',
+        segment: "weather",
+      },
+      {
+        key: "weatherTitle",
+        l: "f",
+        f: '(dom "h2" null "Weather")',
+        segment: "weather",
+      },
+      // Composed tree — section title + input row + result.
       {
         key: "weatherTree",
-        l: "weather:render",
-        inputMap: { city: "weatherCity", data: "weatherData" },
+        l: "f",
+        f: '(dom "section" (obj "class" "weather") weatherTitle weatherRow resultNode)',
         segment: "weather",
       },
     ],
   },
   fns: new Map<LambdaKey, Fn>([
-    ["weather:render",  renderWeather],
     ["weather:setCity", setCity],
     ["weather:fetch",   fetchAction],
   ]),

@@ -3,6 +3,7 @@ import { installDom } from "../../../segments/plastron-dom/src/index.js";
 import { installRouter } from "../../../segments/plastron-routes/src/index.js";
 import type { Fn } from "../../../plastron/src/types/index.js";
 import { buildShellSegment } from "./shell.js";
+import { domBuildersSegment } from "./segments/dom-builders.js";
 
 // ========================================================================
 // Hash-based routing + lazy segment loading.
@@ -21,7 +22,10 @@ const hydrateFn = state.fns.get("hydrate") as Fn;
 const runCycle = state.fns.get("runCycle") as Fn;
 
 const shell = buildShellSegment();
-hydrateFn(state, [shell.segment], [shell.fns]);
+// Hydrate dom-builders first so the lazy-loaded counter / weather
+// segments find el/text/h2/etc. as call heads when their formula
+// cels are auto-wired by extractDeps.
+hydrateFn(state, [domBuildersSegment.segment, shell.segment], [shell.fns]);
 
 const router = installRouter(state, {
   routes: [

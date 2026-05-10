@@ -1,12 +1,13 @@
 import type { Fn, LambdaKey, Segment, State } from "../../../../plastron/src/types/index.js";
-import { el, type VNode } from "../../../../segments/plastron-dom/src/index.js";
 
 // ========================================================================
-// Counter segment — Fibonacci edition.
+// Counter segment — Fibonacci edition (formula-driven render).
 //
-// `count` is the position in the Fibonacci sequence (0, 1, 2, 3, …).
-// The +1 button advances by one step. The render lambda computes
-// fib(count) and displays the result as a traditional Chinese numeral.
+// `count` is the position in the Fibonacci sequence. The +1 button
+// advances by one. The render tree is composed entirely of formula
+// cels referencing dom-builders (el, h2, p, button, obj, onDispatch,
+// concat). Function values for fib + toChinese are exposed as cels
+// so the formulas can call them directly.
 //
 // Sequence shown over successive clicks:
 //   零, 一, 一, 二, 三, 五, 八, 十三, 二十一, 三十四, 五十五,
@@ -19,7 +20,6 @@ export interface SegmentBundle {
   fns: Map<LambdaKey, Fn>;
 }
 
-/** Iterative fibonacci. fib(0) = 0, fib(1) = 1, fib(2) = 1, … */
 const fib = (n: number): number => {
   if (n <= 0) return 0;
   if (n === 1) return 1;
@@ -36,31 +36,22 @@ const fib = (n: number): number => {
 const DIGITS = ["零", "一", "二", "三", "四", "五", "六", "七", "八", "九"] as const;
 const PLACES = ["", "十", "百", "千"] as const;
 
-/** Convert n to a traditional Chinese numeral string for n ∈ [0, 99999999].
- *  Handles 萬 grouping; uses the colloquial "十二" form for 10–19. */
 const toChinese = (n: number): string => {
   if (n === 0) return "零";
   if (n < 0)  return "負" + toChinese(-n);
-
   if (n >= 100000000) {
-    // 億 grouping — fibonacci won't reach here in any reasonable click
-    // budget, but keep the recursion total.
     const yi = Math.floor(n / 100000000);
     const rest = n % 100000000;
     return toChinese(yi) + "億" + (rest === 0 ? "" : (rest < 10000000 ? "零" : "") + toChinese(rest));
   }
-
   if (n >= 10000) {
     const wan = Math.floor(n / 10000);
     const rest = n % 10000;
     return toChinese(wan) + "萬" + (rest === 0 ? "" : (rest < 1000 ? "零" : "") + toChinese(rest));
   }
-
-  // 0 < n < 10000.  10–19 takes the bare "十" prefix ("十一", "十二", …).
   if (n >= 10 && n < 20) {
     return n === 10 ? "十" : "十" + DIGITS[n - 10]!;
   }
-
   let out = "";
   let pendingZero = false;
   for (let i = 3; i >= 0; i--) {
@@ -77,37 +68,90 @@ const toChinese = (n: number): string => {
   return out;
 };
 
-const renderCounter: Fn = ({ count }: { count: number }): VNode => {
-  const value = fib(count);
-  return el("section", { class: "counter" },
-    el("h2", null, "Counter"),
-    el("p", { class: "count" }, toChinese(value)),
-    el("p", { class: "count-arabic" }, `fib(${count}) = ${value}`),
-    el("button", { onClick: { dispatch: "counter:increment" } }, "+1"),
-  );
-};
-
+// The action handler. Stays as JS — async cel mutation is the right
+// shape for this and not what the formula language is for.
 const increment: Fn = async (...args: unknown[]) => {
   const [state] = args as [State];
   const cur = (state.cels.get("count")?.v as number | undefined) ?? 0;
   await (state.fns.get("set") as Fn)(state, "count", cur + 1);
 };
 
+// All render structure now lives in formula cels:
+//
+//   count       (data, number)
+//   fib         (function value, exposed for formula reference)
+//   toChinese   (function value, exposed for formula reference)
+//   fibValue    formula  → fib(count)
+//   chineseText formula  → toChinese(fibValue)
+//   arabicText  formula  → "fib(count) = N"  (via concat)
+//   counterTree formula  → composed VNode tree
+//
+// The whole render path is editable from a sheet — change a formula,
+// the cascade recomputes the tree, plastron-dom paints. No render
+// lambda; the structure IS the formulas.
 export const counterSegment: SegmentBundle = {
   segment: {
     key: "counter",
     cels: [
-      { key: "count", v: 0, segment: "counter" },
+      // Data
+      { key: "count",     v: 0,         segment: "counter" },
+      // Function values — formulas reference these as call heads
+      { key: "fib",       v: fib,       segment: "counter" },
+      { key: "toChinese", v: toChinese, segment: "counter" },
+      // Computed values
+      {
+        key: "fibValue",
+        l: "f",
+        f: "(fib count)",
+        segment: "counter",
+      },
+      {
+        key: "chineseText",
+        l: "f",
+        f: "(toChinese fibValue)",
+        segment: "counter",
+      },
+      {
+        key: "arabicText",
+        l: "f",
+        f: '(concat "fib(" count ") = " fibValue)',
+        segment: "counter",
+      },
+      // Per-element render formulas
+      {
+        key: "counterTitle",
+        l: "f",
+        f: '(dom "h2" null "Counter")',
+        segment: "counter",
+      },
+      {
+        key: "counterChinese",
+        l: "f",
+        f: '(dom "p" (obj "class" "count") chineseText)',
+        segment: "counter",
+      },
+      {
+        key: "counterArabic",
+        l: "f",
+        f: '(dom "p" (obj "class" "count-arabic") arabicText)',
+        segment: "counter",
+      },
+      {
+        key: "counterButton",
+        l: "f",
+        f: '(dom "button" (obj "onClick" (onDispatch "counter:increment")) "+1")',
+        segment: "counter",
+      },
+      // Composed tree — read by the shell as the counter view.
       {
         key: "counterTree",
-        l: "counter:renderCounter",
-        inputMap: { count: "count" },
+        l: "f",
+        f: '(dom "section" (obj "class" "counter") counterTitle counterChinese counterArabic counterButton)',
         segment: "counter",
       },
     ],
   },
   fns: new Map<LambdaKey, Fn>([
-    ["counter:renderCounter", renderCounter],
     ["counter:increment", increment],
   ]),
 };
