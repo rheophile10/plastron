@@ -1,5 +1,5 @@
 import type { Fn } from "../../../../plastron/src/index.js";
-import { el, type VNode } from "../../../../segments/plastron-dom/src/index.js";
+import { el, type VNode } from "../../../plastron-dom/src/index.js";
 import { renderToolbar } from "./toolbar.js";
 import { renderGrid } from "./grid.js";
 import type { CopyMark } from "../actions/clipboard.js";

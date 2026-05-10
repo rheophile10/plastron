@@ -1,4 +1,4 @@
-import { el, type VNode } from "../../../../segments/plastron-dom/src/index.js";
+import { el, type VNode } from "../../../plastron-dom/src/index.js";
 import { displayValue } from "../domain/parse.js";
 
 // ============================================================================

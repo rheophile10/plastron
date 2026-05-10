@@ -1,0 +1,17 @@
+{
+  "name": "plastron-sheet",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Spreadsheet segment for plastron — Excel-style infix formulas, per-cell cels, selection / edit / clipboard actions, and a vnode renderer that paints into a plastron-dom root.",
+  "main": "src/index.ts",
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}
