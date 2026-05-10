@@ -2,11 +2,13 @@ import type { Cel, Fn, Key, State } from "../types/index.js";
 import { PRECOMPUTED_STATES_KEY, type PrecomputedIndexes } from "./precompute.js";
 import { releaseValue } from "./hydrate.js";
 
-// Route a changed cel onto every channel resolved at precompute time.
-// _channelHandlers is materialized from cel.channel + state.channelRegistry
-// when precompute runs (at hydrate end and flush end), so the hot path
-// is a single property read + tight for loop — no Array.isArray check,
-// no Map.get per channel.
+// Route a changed cel onto every channel handler. The fast path reads
+// cel._channelHandlers — materialized by the optional precompute pass
+// from cel.channel + state.channelRegistry. When that cache is absent
+// (just after an essential precompute pass invalidated it, before the
+// optional pass has repopulated), fall back to resolving channels live
+// from cel.channel and the registry. Same answer either way; the fast
+// path just avoids the per-fire Array.isArray + Map.get.
 //
 // NOTE on concurrency: cels in the same wave-level fire in parallel,
 // so multiple cels may enqueue onto the same channel within one
@@ -15,8 +17,16 @@ import { releaseValue } from "./hydrate.js";
 // satisfy this trivially.
 const enqueueChannels = (cel: Cel, state: State): void => {
   const handlers = cel._channelHandlers;
-  if (!handlers) return;
-  for (const h of handlers) h.enqueue({ cel, state });
+  if (handlers) {
+    for (const h of handlers) h.enqueue({ cel, state });
+    return;
+  }
+  // Fallback path — cache not yet populated.
+  if (!cel.channel) return;
+  const keys = Array.isArray(cel.channel) ? cel.channel : [cel.channel];
+  for (const k of keys) {
+    state.channelRegistry.get(k)?.enqueue({ cel, state });
+  }
 };
 
 // ============================================================================
@@ -80,19 +90,29 @@ const fireCel = (
 
   // Suppression mode: skip the lambda when no input changed
   // (dynamic cels always fire — their source is external).
-  // Walks _inputEntries (precomputed cel refs) instead of inputMap
-  // strings, avoiding Map.get per input on the suppression check too.
+  // Fast path walks _inputEntries (precomputed cel refs); fallback
+  // walks cel.inputMap (string keys looked up against `changed`).
   if (suppression) {
     let shouldFire = cel.dynamic === true;
-    if (!shouldFire && cel._inputEntries) {
-      outer: for (const [, cs] of cel._inputEntries) {
-        if (cs === undefined) continue;
-        if (Array.isArray(cs)) {
-          for (const c of cs) {
-            if (c && changed!.has(c.key)) { shouldFire = true; break outer; }
+    if (!shouldFire) {
+      if (cel._inputEntries) {
+        outer: for (const [, cs] of cel._inputEntries) {
+          if (cs === undefined) continue;
+          if (Array.isArray(cs)) {
+            for (const c of cs) {
+              if (c && changed!.has(c.key)) { shouldFire = true; break outer; }
+            }
+          } else if (changed!.has(cs.key)) {
+            shouldFire = true; break;
           }
-        } else if (changed!.has(cs.key)) {
-          shouldFire = true; break;
+        }
+      } else if (cel.inputMap) {
+        // Fallback — cache not yet populated.
+        outer: for (const ref of Object.values(cel.inputMap)) {
+          const refs = Array.isArray(ref) ? ref : [ref];
+          for (const k of refs) {
+            if (changed!.has(k)) { shouldFire = true; break outer; }
+          }
         }
       }
     }
@@ -100,14 +120,15 @@ const fireCel = (
   }
 
   // Fast path: compiler-supplied closure captures cels directly, so we
-  // skip the inputs-object allocation entirely. Built by precompute via
-  // cel._buildEvaluate; nothing to do here but call it.
+  // skip the inputs-object allocation entirely. Built by the optional
+  // precompute pass via cel._buildEvaluate.
   let fnResult: unknown;
   if (cel._evaluate) {
     fnResult = cel._evaluate();
   } else {
     const inputs: Record<string, unknown> = {};
     if (cel._inputEntries) {
+      // Fast: walk pre-resolved cel refs, read .v directly.
       for (const [name, cs] of cel._inputEntries) {
         if (cs === undefined) {
           inputs[name] = undefined;
@@ -116,6 +137,13 @@ const fireCel = (
         } else {
           inputs[name] = cs.v;
         }
+      }
+    } else if (cel.inputMap) {
+      // Fallback — cache not yet populated; resolve refs live.
+      for (const [name, ref] of Object.entries(cel.inputMap)) {
+        inputs[name] = Array.isArray(ref)
+          ? ref.map((k) => state.cels.get(k)?.v)
+          : state.cels.get(ref)?.v;
       }
     }
     fnResult = fn(inputs);

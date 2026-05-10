@@ -70,6 +70,13 @@ export interface State {
    *  enqueues changed cels onto their bound channels; channels own
    *  scheduling + commit. Like tag handlers, these don't round-trip. */
   channelRegistry: Map<ChannelKey, ChannelHandler>;
+  /** Topology-version token. Bumped synchronously inside precompute()
+   *  whenever the cel graph changes. The async optional pass captures
+   *  this value at start and checks it before each cel commit; any
+   *  mismatch means a newer essential pass has run, so the optional
+   *  pass aborts cleanly without writing partial results to a
+   *  superseded view of the graph. */
+  precomputeGeneration: number;
 }
 
 /** Fold a list of segments + fn registries into the state's four maps

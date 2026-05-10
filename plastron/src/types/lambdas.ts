@@ -45,15 +45,26 @@ export interface Fn<_I = unknown, O = unknown> {
 //                     usual fn(inputs) call. Lets a compiler that knows
 //                     its dependency shape emit code that captures cel
 //                     refs directly and skips the per-fire input-object
-//                     allocation. Compilers that don't supply this are
-//                     unaffected — fireCel falls through to the standard
-//                     gather-and-call path.
+//                     allocation.
+//
+//                     The return type is `(() => unknown) | Promise<() => unknown>`
+//                     — a synchronous build is fine for in-process
+//                     compilers (formula codegen, hand-written JS), but
+//                     compilers that need async setup (WASM module
+//                     instantiation, worker spawn, network fetch of a
+//                     compiled artifact) can return a Promise that the
+//                     async optional precompute pass awaits before
+//                     storing the closure on cel._evaluate.
+//
+//                     Compilers that don't supply this are unaffected —
+//                     fireCel falls through to the standard gather-and-
+//                     call path.
 // ============================================================================
 
 export interface CompiledEnvelope {
   fn: Fn;
   dispose?: () => void;
-  buildEvaluate?: (inputs: ResolvedInputs) => () => unknown;
+  buildEvaluate?: (inputs: ResolvedInputs) => (() => unknown) | Promise<() => unknown>;
 }
 
 export type CompiledLambda = Fn | CompiledEnvelope;

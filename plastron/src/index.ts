@@ -37,13 +37,14 @@ export const createInitialState = (): State => {
   // don't want those mutations leaking into the canonical registry.
   return {
     cels,
-    fns:             new Map(coreFns),
-    fnMetadata:      new Map(coreFnMetadata),
-    schemas:         new Map(),
-    schemaMetadata:  new Map(),
-    tagRegistry:     new Map(),
-    fnDispose:       new Map(),
-    channelRegistry: new Map(),
+    fns:                  new Map(coreFns),
+    fnMetadata:           new Map(coreFnMetadata),
+    schemas:              new Map(),
+    schemaMetadata:       new Map(),
+    tagRegistry:          new Map(),
+    fnDispose:            new Map(),
+    channelRegistry:      new Map(),
+    precomputeGeneration: 0,
   };
 };
 

@@ -89,11 +89,14 @@ export interface Cel {
    *  before hydrating cels that reference them. */
   _channelHandlers?: ChannelHandler[];
   /** Compiler-supplied closure builder, captured at compile time from
-   *  the CompiledEnvelope returned by the cel's compiler. precompute
-   *  invokes this with the resolved inputs to produce cel._evaluate.
-   *  Compilers that don't provide one leave this undefined; fireCel
-   *  then uses the standard gather-and-call path. */
-  _buildEvaluate?: (inputs: ResolvedInputs) => () => unknown;
+   *  the CompiledEnvelope returned by the cel's compiler. The optional
+   *  precompute pass invokes this with the resolved inputs to produce
+   *  cel._evaluate; the result may be a synchronous closure or a
+   *  Promise of one (compilers that need async setup — WASM, worker
+   *  spawn, network fetch — return the latter; the async pass awaits
+   *  it before storing). Compilers that don't provide one leave this
+   *  undefined; fireCel uses the standard gather-and-call path. */
+  _buildEvaluate?: (inputs: ResolvedInputs) => (() => unknown) | Promise<() => unknown>;
   /** Per-cel monomorphic closure that returns the cel's next value.
    *  Built by precompute via cel._buildEvaluate(resolvedInputs); the
    *  closure captures live cel refs directly, so calling it skips both
