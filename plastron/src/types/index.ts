@@ -22,6 +22,7 @@ import type { Cel, DehydratedCel } from "./cels.js";
 import type { ChannelKey, ChannelHandler } from "./channels.js";
 import type { Fn, LambdaKey, LambdaMetadata } from "./lambdas.js";
 import type { SchemaKey, SchemaMetadata } from "./schemas.js";
+import type { SegmentManifest } from "./segments.js";
 import type { TagKey, TagHandler } from "./tags.js";
 
 export type Key = string;
@@ -58,6 +59,10 @@ export interface Segment {
    *  consumer is expected to write at startup; everything else
    *  lazy-fills on first use. */
   downstream?: Record<Key, Key[]>;
+  /** Optional manifest. When present, hydrate validates dependsOn
+   *  and records it in state.segments. When absent, the segment
+   *  loads with no manifest entry (legacy behavior). */
+  manifest?: SegmentManifest;
 }
 
 export interface State {
@@ -86,6 +91,13 @@ export interface State {
    *  pass aborts cleanly without writing partial results to a
    *  superseded view of the graph. */
   precomputeGeneration: number;
+  /** Loaded-segment registry. Populated by hydrate when a segment
+   *  ships a manifest; mutated when a segment is flushed. Queried
+   *  by hydrate (dependency check), flush (dependent check),
+   *  dehydrate (manifest emission), and host tooling. Empty for
+   *  segments hydrated without a manifest (strictly backwards
+   *  compatible with the pre-manifest flat-list world). */
+  segments: Map<Key, SegmentManifest>;
 }
 
 /** Fold a list of segments + fn registries into the state's four maps
@@ -192,4 +204,5 @@ export type { Cel, DehydratedCel } from "./cels.js";
 export type { ChannelKey, ChannelHandler, ChannelEnqueue } from "./channels.js";
 export type { Fn, LambdaKey, LambdaMetadata, Compiler, CompiledLambda, CompiledEnvelope, ResolvedInputs } from "./lambdas.js";
 export type { SchemaKey, SchemaMetadata, WasmLayout, DehydrateSchemas, HydrateSchemas } from "./schemas.js";
+export type { SegmentDependency, SegmentProvides, SegmentManifest } from "./segments.js";
 export type { TagKey, TagHandler } from "./tags.js";

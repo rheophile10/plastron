@@ -7,6 +7,7 @@ import {
 } from "./input.js";
 import { flush } from "./flush.js";
 import { compileFormula, extractDeps } from "./formula.js";
+import { findDependents, getSegmentManifest, listSegments } from "./segments.js";
 
 // ============================================================================
 // coreFns + coreFnMetadata — the default fn registry and the parallel
@@ -56,6 +57,11 @@ const coreFnEntries: ReadonlyArray<CoreFnEntry> = [
   { key: "flush",          fn: flush,          locked: true  },
   { key: "drain",          fn: drain,          locked: true  },
   { key: "registerLambda", fn: registerLambda, locked: true  },
+  // Segment-manifest introspection. Sync, side-effect-free, locked
+  // so segments can't shadow them.
+  { key: "getSegmentManifest", fn: getSegmentManifest as Fn, locked: true  },
+  { key: "listSegments",       fn: listSegments       as Fn, locked: true  },
+  { key: "findDependents",     fn: findDependents     as Fn, locked: true  },
   { key: "f",              fn: formulaFn,      locked: false },
 ];
 

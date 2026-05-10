@@ -1,5 +1,5 @@
 import type {
-  Cel, DehydratedCel, Fn, LambdaKey, State,
+  Cel, DehydratedCel, Fn, LambdaKey, SegmentManifest, State,
 } from "../../../plastron/src/index.js";
 import { createDomChannel, type DomRoot, type PainterRoot, type DomChannelHandle } from "./paint.js";
 import { diffVNodes } from "./diff.js";
@@ -45,6 +45,24 @@ import {
 
 export const PLASTRON_DOM_SEGMENT = "plastronDom" as const;
 export const DEFAULT_DOM_CHANNEL_KEY = "plastronDom" as const;
+
+/** Manifest for the plastron-dom segment. Declares its version, the
+ *  schemas/lambdas it registers, the channel it owns, and the cel
+ *  segment it manages. No `dependsOn`: the DOM painter is leaf-level
+ *  in the dependency graph (it consumes tree cels but doesn't
+ *  require any other plastron-* package to be loaded). */
+export const plastronDomManifest: SegmentManifest = {
+  segment: PLASTRON_DOM_SEGMENT,
+  version: "1.0.0",
+  description:
+    "rAF-batched DOM painter — diffs vnode trees and patches the DOM via a channel.",
+  provides: {
+    schemas: [VNODE_SCHEMA_KEY],
+    lambdas: [VNODE_IS_CHANGED_KEY, VNODE_DIFF_KEY],
+    channels: [DEFAULT_DOM_CHANNEL_KEY],
+    celSegments: [PLASTRON_DOM_SEGMENT],
+  },
+};
 
 export type {
   VNode, VText, VElement, AttrValue, EventBinding, EventInfo,
@@ -190,8 +208,40 @@ export const installDom = (
   const channel = createDomChannel(state, painterRoots);
   state.channelRegistry.set(channelKey, channel);
 
+  // Attach the manifest so a host loading multiple painters (each
+  // with its own channelKey) gets exactly one entry in state.segments
+  // — installDom is called per channel but the segment key stays the
+  // same. Honour the channelKey override by emitting a manifest that
+  // lists the actual channel.
+  //
+  // Multi-install caveat: installDom called twice with different
+  // channelKeys will leave the second invocation's channelKey as the
+  // recorded provider in `state.segments.get(PLASTRON_DOM_SEGMENT)
+  // .provides.channels` — the manifest pass overwrites rather than
+  // merges. This is intentional: the segment owns whichever channel it
+  // most recently registered. The previously-registered channel still
+  // works at runtime (it stays in state.channelRegistry), but it's no
+  // longer advertised in the manifest. Hosts wanting both channels
+  // discoverable via introspection should register the second handler
+  // manually (state.channelRegistry.set + their own manifest patch)
+  // rather than calling installDom twice.
+  const manifest: SegmentManifest =
+    channelKey === DEFAULT_DOM_CHANNEL_KEY
+      ? plastronDomManifest
+      : {
+          ...plastronDomManifest,
+          provides: {
+            ...plastronDomManifest.provides,
+            channels: [channelKey],
+          },
+        };
+
   const hydrate = state.fns.get("hydrate") as Fn;
-  hydrate(state, [{ key: PLASTRON_DOM_SEGMENT, cels: patchCels }], [patchFns]);
+  hydrate(
+    state,
+    [{ key: PLASTRON_DOM_SEGMENT, cels: patchCels, manifest }],
+    [patchFns],
+  );
 
   // Painter sentinel cel — `flush(PLASTRON_DOM_SEGMENT)` walks cels,
   // fires _dispose, removes them. The dispose hook tears down the
