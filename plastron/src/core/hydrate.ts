@@ -10,6 +10,9 @@ import {
 } from "./precompute.js";
 import { dehydrateSchemas, hydrateSchemas } from "./schema-conversion.js";
 import { satisfies } from "./segments.js";
+import {
+  CONFIG_PERFORMANCE, DEFAULT_PERF_CONFIG, STATS_SEGMENT,
+} from "./perf.js";
 
 // Compile a cel's source body (cel.f) via the compiler at
 // state.fns.get(cel.l ?? "f"). Sets cel._fn, cel._dispose, and
@@ -342,15 +345,29 @@ export const dehydrate: Dehydrate = (state, opts) => {
   }
 
   // Group cels by `segment` field. The "core" segment is excluded —
-  // its cels are seeded by createInitialState and never change.
-  // Cels without a segment fall into "default" so nothing is dropped.
+  // its cels are seeded by createInitialState and never change. The
+  // "stats" segment is also excluded — it's reserved for kernel-
+  // written observation cels (see task-perf-tracking.md). Cels without
+  // a segment fall into "default" so nothing is dropped.
+  //
+  // The config_performance cel survives but its v.enabled is reset to
+  // the default (false) — a dehydrated project shouldn't auto-enable
+  // tracking on the next host that hydrates it. Other flags
+  // (sampleRate, watchCels, …) preserve their authored values.
+  // config_environment passes through untouched — it's project
+  // metadata that exists precisely to round-trip.
   const bySegment = new Map<Key, DehydratedCel[]>();
   for (const cel of state.cels.values()) {
     if (cel.segment === "core") continue;
+    if (cel.segment === STATS_SEGMENT) continue;
     const segKey = cel.segment ?? "default";
     let bucket = bySegment.get(segKey);
     if (!bucket) { bucket = []; bySegment.set(segKey, bucket); }
-    bucket.push(deflate(cel, schemaToKey, state.tagRegistry));
+    let dc = deflate(cel, schemaToKey, state.tagRegistry);
+    if (cel.key === CONFIG_PERFORMANCE && dc.v && typeof dc.v === "object") {
+      dc = { ...dc, v: { ...dc.v as object, enabled: DEFAULT_PERF_CONFIG.enabled } };
+    }
+    bucket.push(dc);
   }
 
   // No per-segment ownership in state for the metadata/schemas maps —

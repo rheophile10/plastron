@@ -1,6 +1,9 @@
 import type {
   Cel, ChannelHandler, Key, ResolvedInputs, State,
 } from "../types/index.js";
+import {
+  CONFIG_PERFORMANCE, type PerfConfig, flushPrecomputeStats,
+} from "./perf.js";
 
 // ============================================================================
 // precompute — derive the indexes runCycle and the input fns need,
@@ -142,6 +145,13 @@ export const precompute = (state: State): void => {
   // Schedule the optional pass. Fire-and-forget — precomputeOptional
   // catches its own errors so the Promise always resolves.
   void precomputeOptional(state);
+
+  // Perf-tracking hook — emit stats_precompute snapshot when enabled.
+  // Cheap when disabled: one Map.get + one property read.
+  const perf = state.cels.get(CONFIG_PERFORMANCE)?.v as PerfConfig | undefined;
+  if (perf?.enabled && perf.trackPrecompute) {
+    flushPrecomputeStats(state, !!perf.includeCelDetail);
+  }
 };
 
 // ── Optional pass ───────────────────────────────────────────────────────────

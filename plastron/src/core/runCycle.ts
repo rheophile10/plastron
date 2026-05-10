@@ -1,6 +1,25 @@
 import type { Cel, Fn, Key, State } from "../types/index.js";
 import { PRECOMPUTED_STATES_KEY, bfsDownstream, type PrecomputedIndexes } from "./precompute.js";
 import { releaseValue } from "./hydrate.js";
+import {
+  beginCycle, ensureChannelDrainsWrapped, flushCycleStats, nowNs,
+  recordChannelEnqueue, recordFireTiming, recordSkip, recordWaveTiming,
+  STATS_CYCLES, STATS_CHANNELS, STATS_FUNCTIONS,
+} from "./perf.js";
+
+/** Per-cycle tracking context. Built once at runCycle entry; threaded
+ *  through runCascade and fireCel via the optional `perfCtx` parameter.
+ *  When undefined, every hook short-circuits and the hot path is
+ *  byte-identical to the pre-perf-tracking version. */
+interface PerfCtx {
+  /** Cels listed in config_performance.v.watchCels. Lookup is hot, so
+   *  we materialize the array into a Set once. undefined = no list. */
+  watchSet: Set<Key> | undefined;
+  trackChannels: boolean;
+  /** Current wave being fired — set by runCascade before each wave's
+   *  loop, read by fireCel when recording per-cel timing. */
+  currentWave: number;
+}
 
 // Route a changed cel onto every channel handler. The fast path reads
 // cel._channelHandlers — materialized by the optional precompute pass
@@ -15,10 +34,17 @@ import { releaseValue } from "./hydrate.js";
 // microtask. Channel handlers must keep enqueue re-entrant — typically
 // just a Set add or queue push. The current DOM/log/persist designs
 // satisfy this trivially.
-const enqueueChannels = (cel: Cel, state: State): void => {
+//
+// Perf hook: when `perfCtx?.trackChannels` is true, bump
+// state.perfChannels[k].enqueues for each handler that fires.
+const enqueueChannels = (cel: Cel, state: State, perfCtx: PerfCtx | undefined): void => {
   const handlers = cel._channelHandlers;
   if (handlers) {
     for (const h of handlers) h.enqueue({ cel, state });
+    if (perfCtx?.trackChannels && cel.channel) {
+      const keys = Array.isArray(cel.channel) ? cel.channel : [cel.channel];
+      for (const k of keys) recordChannelEnqueue(state, k);
+    }
     return;
   }
   // Fallback path — cache not yet populated.
@@ -26,6 +52,7 @@ const enqueueChannels = (cel: Cel, state: State): void => {
   const keys = Array.isArray(cel.channel) ? cel.channel : [cel.channel];
   for (const k of keys) {
     state.channelRegistry.get(k)?.enqueue({ cel, state });
+    if (perfCtx?.trackChannels) recordChannelEnqueue(state, k);
   }
 };
 
@@ -75,11 +102,17 @@ const readIndexes = (state: State): PrecomputedIndexes | undefined =>
 // pure compute graphs); returns Promise<void> as soon as the fn body,
 // _isChanged, or _diffFn yields. Callers either `Promise.all` the
 // returned Promises or ignore void returns.
+//
+// Perf hook: when `perfCtx` is set, time the fn body's wall-clock and
+// record into state.perfFunctions / state.perfScratch. Skip-suppression
+// hits bump the wave's `skipped` counter. The disabled path (perfCtx
+// undefined) is byte-identical to the pre-perf-tracking version.
 const fireCel = (
   state: State,
   key: Key,
   suppression: boolean,
   changed: Set<Key> | undefined,
+  perfCtx: PerfCtx | undefined,
 ): void | Promise<void> => {
   const cel = state.cels.get(key);
   if (!cel || !cel.l) return;
@@ -116,12 +149,16 @@ const fireCel = (
         }
       }
     }
-    if (!shouldFire) return;
+    if (!shouldFire) {
+      if (perfCtx) recordSkip(state, perfCtx.currentWave);
+      return;
+    }
   }
 
   // Fast path: compiler-supplied closure captures cels directly, so we
   // skip the inputs-object allocation entirely. Built by the optional
   // precompute pass via cel._buildEvaluate.
+  const t0 = perfCtx ? nowNs() : 0;
   let fnResult: unknown;
   if (cel._evaluate) {
     fnResult = cel._evaluate();
@@ -150,9 +187,13 @@ const fireCel = (
   }
 
   if (fnResult instanceof Promise) {
-    return fnResult.then((newV) => finishFire(state, cel, newV, suppression, changed));
+    return fnResult.then((newV) => {
+      if (perfCtx) recordFireTiming(state, cel, nowNs() - t0, perfCtx.currentWave, perfCtx.watchSet);
+      return finishFire(state, cel, newV, suppression, changed, perfCtx);
+    });
   }
-  return finishFireSync(state, cel, fnResult, suppression, changed);
+  if (perfCtx) recordFireTiming(state, cel, nowNs() - t0, perfCtx.currentWave, perfCtx.watchSet);
+  return finishFireSync(state, cel, fnResult, suppression, changed, perfCtx);
 };
 
 // Continues fireCel after the fn result is known. Returns void if
@@ -160,12 +201,13 @@ const fireCel = (
 const finishFireSync = (
   state: State, cel: Cel, newV: unknown,
   suppression: boolean, changed: Set<Key> | undefined,
+  perfCtx: PerfCtx | undefined,
 ): void | Promise<void> => {
   if (!suppression) {
     cel.v = newV;
     // Full-mode cascade (boot from scratch) still routes to channels —
     // host code may want a "paint everything" pass at startup.
-    enqueueChannels(cel, state);
+    enqueueChannels(cel, state, perfCtx);
     return;
   }
 
@@ -178,14 +220,14 @@ const finishFireSync = (
     if (r instanceof Promise) {
       return r.then((isCh) => {
         if (!isCh) return;
-        return commitChange(state, cel, newV, changed!);
+        return commitChange(state, cel, newV, changed!, perfCtx);
       });
     }
     if (!r) return;
   } else if (cel.v === newV) {
     return;
   }
-  return commitChange(state, cel, newV, changed!);
+  return commitChange(state, cel, newV, changed!, perfCtx);
 };
 
 // Async wrapper used after the fn body itself yielded a Promise. The
@@ -194,8 +236,9 @@ const finishFireSync = (
 const finishFire = async (
   state: State, cel: Cel, newV: unknown,
   suppression: boolean, changed: Set<Key> | undefined,
+  perfCtx: PerfCtx | undefined,
 ): Promise<void> => {
-  const r = finishFireSync(state, cel, newV, suppression, changed);
+  const r = finishFireSync(state, cel, newV, suppression, changed, perfCtx);
   if (r instanceof Promise) await r;
 };
 
@@ -204,6 +247,7 @@ const finishFire = async (
 // only when _diffFn is async.
 const commitChange = (
   state: State, cel: Cel, newV: unknown, changed: Set<Key>,
+  perfCtx: PerfCtx | undefined,
 ): void | Promise<void> => {
   if (cel._diffFn) {
     const d = cel._diffFn(cel.v, newV);
@@ -215,7 +259,7 @@ const commitChange = (
         changed.add(cel.key);
         // Route to channels AFTER cel.v / cel._diff are settled so the
         // channel sees consistent state when it reads them.
-        enqueueChannels(cel, state);
+        enqueueChannels(cel, state, perfCtx);
       });
     }
     cel._diff = d;
@@ -223,13 +267,14 @@ const commitChange = (
   releaseValue(cel.v, cel.tag, state.tagRegistry);
   cel.v = newV;
   changed.add(cel.key);
-  enqueueChannels(cel, state);
+  enqueueChannels(cel, state, perfCtx);
 };
 
 export const runCascade = async (
   state: State,
   affected: Set<Key>,
   changed?: Set<Key>,
+  perfCtx?: PerfCtx,
 ): Promise<void> => {
   const indexes = readIndexes(state);
   if (!indexes || affected.size === 0) return;
@@ -239,19 +284,28 @@ export const runCascade = async (
   for (const wave of indexes.sortedWaves) {
     const levels = indexes.waveCascade.get(wave)!;
     for (const level of levels) {
+      const waveStartNs = perfCtx ? nowNs() : 0;
+      if (perfCtx) {
+        perfCtx.currentWave = wave;
+      }
       // Fire every affected cel in this level. Collect Promises only
       // when fireCel actually yielded — sync graphs never allocate the
       // promises array.
       let promises: Promise<void>[] | null = null;
+      let inFlight = 0;
       for (const key of level) {
         if (!affected.has(key)) continue;
-        const r = fireCel(state, key, suppression, changed);
+        const r = fireCel(state, key, suppression, changed, perfCtx);
         if (r instanceof Promise) {
           if (!promises) promises = [];
           promises.push(r);
+          inFlight++;
         }
       }
       if (promises) await Promise.all(promises);
+      if (perfCtx) {
+        recordWaveTiming(state, wave, nowNs() - waveStartNs, Math.max(inFlight, 1));
+      }
     }
   }
 };
@@ -282,9 +336,41 @@ export const affectedFor = (state: State, writtenKeys: Key[]): Set<Key> => {
   return affected;
 };
 
-export const runCycle: Fn = async (state: State) => {
+export const runCycle: Fn = async (state: State, trigger?: Key | "batch") => {
   const indexes = readIndexes(state);
   if (!indexes) return state;
+
+  // Cycle entry — read config once, decide whether to sample. Disabled
+  // path: bumps cycleN and modulo, allocates {config, samplingHit}
+  // (V8 escape-elides), short-circuits.
+  const { config, samplingHit } = beginCycle(state);
+
+  // Build the per-cycle perf context only when sampling. When undefined,
+  // every fireCel / runCascade hot-path branch short-circuits.
+  let perfCtx: PerfCtx | undefined;
+  if (samplingHit && config) {
+    const scratch = state.perfScratch;
+    scratch.cycleStartNs = nowNs();
+    scratch.trigger = trigger;
+    scratch.firedCount = 0;
+    scratch.skippedCount = 0;
+    scratch.waveStats.clear();
+    scratch.watchedCelTimings.clear();
+
+    perfCtx = {
+      watchSet: config.watchCels && config.watchCels.length > 0
+        ? new Set(config.watchCels)
+        : undefined,
+      trackChannels: !!config.trackChannels,
+      currentWave: 0,
+    };
+
+    // Wrap channel drains so completions show up in stats_channels.
+    // v1: idempotent and one-shot — no auto-unwrap.
+    if (perfCtx.trackChannels) {
+      ensureChannelDrainsWrapped(state);
+    }
+  }
 
   const all = new Set<Key>();
   for (const levels of indexes.waveCascade.values()) {
@@ -293,6 +379,23 @@ export const runCycle: Fn = async (state: State) => {
     }
   }
   // Full mode (no `changed` arg) — every lambda cel fires from scratch.
-  await runCascade(state, all);
+  await runCascade(state, all, undefined, perfCtx);
+
+  // Cycle exit — flush snapshots when sampled. Direct cel.v mutation,
+  // not setCel, so the writes don't re-enter the cascade.
+  if (perfCtx && config) {
+    if (config.trackCycles || config.trackFunctions || config.trackChannels) {
+      flushCycleStats(state);
+      // Stats cels with channel bindings need an explicit enqueue —
+      // see perf.ts header. Channels not declared on the cels are
+      // a no-op.
+      const cycCel = state.cels.get(STATS_CYCLES);
+      if (cycCel?.channel) enqueueChannels(cycCel, state, perfCtx);
+      const fnCel = state.cels.get(STATS_FUNCTIONS);
+      if (fnCel?.channel) enqueueChannels(fnCel, state, perfCtx);
+      const chCel = state.cels.get(STATS_CHANNELS);
+      if (chCel?.channel) enqueueChannels(chCel, state, perfCtx);
+    }
+  }
   return state;
 };

@@ -7,6 +7,7 @@
   "scripts": {
     "cascade": "tsx src/cascade-shape.ts",
     "memory": "tsx src/memory-per-cel.ts",
+    "perf-overhead": "tsx src/perf-overhead.ts",
     "all": "npm run cascade && npm run memory",
     "check": "tsc --noEmit"
   },

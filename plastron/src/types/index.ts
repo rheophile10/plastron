@@ -98,6 +98,45 @@ export interface State {
    *  segments hydrated without a manifest (strictly backwards
    *  compatible with the pre-manifest flat-list world). */
   segments: Map<Key, SegmentManifest>;
+
+  /** Per-cycle scratch — accumulates timing + counts during a cycle,
+   *  flushed to stats cels at cycle end. Always allocated; only written
+   *  when config_performance.v.enabled is true. */
+  perfScratch: PerfScratch;
+
+  /** Cumulative function-level stats. Survives across cycles. Reset by
+   *  the resetStats core-fn. Keyed by lambda key (or cel key when no
+   *  lambda is registered). */
+  perfFunctions: Map<LambdaKey, { calls: number; totalNs: number; lastNs: number }>;
+
+  /** Cumulative channel-level stats. Survives across cycles. Reset by
+   *  the resetStats core-fn. */
+  perfChannels: Map<ChannelKey, { enqueues: number; drains: number; queueDepth: number }>;
+
+  /** Side-cache of original (un-instrumented) channel handlers. Set
+   *  when perf instrumentation wraps a channel's drain so the original
+   *  can be restored. v1: wrap-on-first-tracked-cycle, no auto-unwrap;
+   *  toggling tracking off requires a fresh state. */
+  _perfWrappedChannels?: Map<ChannelKey, ChannelHandler>;
+}
+
+/** Per-cycle scratch buffer. Always allocated on State; only written
+ *  when config_performance.v.enabled is true and the cycle is sampled. */
+export interface PerfScratch {
+  /** Monotonically increasing cycle counter. Bumped at every runCycle
+   *  entry regardless of tracking state — used as the sample selector
+   *  (`cycleN % sampleRate === 0`) and as the cycle id in snapshots. */
+  cycleN: number;
+  cycleStartNs: number;
+  trigger: Key | "batch" | undefined;
+  firedCount: number;
+  skippedCount: number;
+  /** wave index → { fired, skipped, durationNs, parallelism } */
+  waveStats: Map<number, { fired: number; skipped: number; durationNs: number; parallelism: number }>;
+  /** When config_performance.v.watchCels is non-empty, per-cel timing
+   *  (ns) for those cels during the current cycle. Cleared at the
+   *  start of every sampled cycle. */
+  watchedCelTimings: Map<Key, number>;
 }
 
 /** Fold a list of segments + fn registries into the state's four maps

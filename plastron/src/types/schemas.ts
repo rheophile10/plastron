@@ -108,6 +108,14 @@ export interface SchemaMetadata {
    *
    *  Travels with segments as JSON via SchemaMetadata. */
   wasmLayout?: WasmLayout;
+  /** Optional byte-size estimator for values matching this schema.
+   *  Returns approximate bytes consumed by the value. Used by the
+   *  perf-tracking pass when summing per-cel memory. Falsy = fall back
+   *  to the kernel's default estimator (typed arrays exact, primitives
+   *  by table, objects by JSON.stringify length, with a depth cap).
+   *  Resolved at runtime via state.fns.get(meta.byteLength). Estimators
+   *  must be sync. */
+  byteLength?: LambdaKey;
 }
 
 // ============================================================================

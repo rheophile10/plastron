@@ -1,0 +1,20 @@
+{
+  "name": "perf-tracking-demo",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Demo of plastron's opt-in performance tracking — enables tracking, runs a small cascade, prints stats.",
+  "scripts": {
+    "start": "tsx src/index.ts",
+    "smoke": "tsx src/smoke.ts",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.2",
+    "tsx": "^4.19.2",
+    "typescript": "~5.9.3"
+  },
+  "dependencies": {
+    "zod": "^4.4.3"
+  }
+}

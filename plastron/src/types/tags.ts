@@ -31,4 +31,8 @@ export interface TagHandler {
    *  replaced or the owning cel is overwritten. Errors are swallowed
    *  so a misbehaving handler can't block teardown. */
   release?: (v: unknown) => void;
+  /** Optional byte-size estimator. Same semantics as
+   *  SchemaMetadata.byteLength but for opaque-tagged values. Tag
+   *  estimator wins over schema estimator when both are present. */
+  byteLength?: (v: unknown) => number;
 }
