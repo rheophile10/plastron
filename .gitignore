@@ -25,3 +25,7 @@ coverage/
 # Local-only working docs
 examples/plastron-sheet/plan.md
 notes/
+docs/
+
+# Bench output (one JSON per run; not source-of-truth)
+bench/results/
