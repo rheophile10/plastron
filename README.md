@@ -79,6 +79,7 @@ interface Segment {
   fnMetaData?:     Record<LambdaKey, LambdaMetadata>;
   schemaMetadata?: Record<SchemaKey, SchemaMetadata>;
   downstream?:     Record<Key, Key[]>;     // optional, see "Shipping precomputed closures"
+  manifest?:       SegmentManifest;        // optional, see "Segment manifests"
 }
 ```
 
@@ -156,6 +157,34 @@ const segments = dehydrate(state, {
 
 The closure is derived data, so a hand-edited segment can drift out of sync with `inputMap`. In dev builds, validate by BFSing each shipped closure and comparing against the live cache. Stale closures are cheap to detect and cheaper to drop than to debug.
 
+## Segment manifests
+
+A segment can ship an optional `manifest` declaring its version, what it provides (lambdas, schemas, tags, channels, cel-segment names it owns), and what it depends on. When present, hydrate validates `dependsOn` against already-loaded manifests and other manifests in the same call (with semver matching) before mutating any state. Successful hydrate records the manifest into `state.segments` after `precompute()` completes; `dehydrate` emits each loaded manifest back onto its segment.
+
+```ts
+interface SegmentManifest {
+  segment:      string;
+  version:      string;                                // semver
+  description?: string;
+  dependsOn?:   Array<{ segment: string; semver?: string; required?: boolean }>;
+  provides?:    {
+    lambdas?:     LambdaKey[];
+    schemas?:     SchemaKey[];
+    tags?:        TagKey[];
+    channels?:    ChannelKey[];
+    celSegments?: string[];                            // cel.segment values this owns
+  };
+}
+```
+
+`flush(state, key)` refuses to remove a segment that has declared dependents. Pass `{ cascade: true }` to flush them in topological order first, or `{ force: true }` to drop the manifest and let dependents fail at runtime.
+
+Three locked core fns expose the registry: `getSegmentManifest(state, key)`, `listSegments(state)`, `findDependents(state, key)`. The semver subset shipped inline supports `*`, exact, `^`, `~`, and the comparator forms (`>=`, `<=`, `>`, `<`, `=`); compound `||` and x-ranges intentionally return `false` (out of scope).
+
+Reserved segment keys: `"core"` (kernel-internal seeds, always present), `"config"` (per-feature `config_*` cels), `"stats"` (observation cels written by the kernel — filtered from dehydrate), `"default"` (cels with no `segment` field). Package segments use the package name; cels they place in shared segments must use `<package>_` or `<package>:` key prefixes so the shared-cleanup heuristic can identify them at flush.
+
+The whole layer is opt-in. A segment without `manifest` hydrates exactly as before and creates no `state.segments` entry. See `examples/segments-introspect-demo` for a full lifecycle walkthrough.
+
 ## State changes through the DAG
 
 A write to cel $k$ scopes the affected set, then walks the level structure:
@@ -202,6 +231,8 @@ State holds a flat record of maps:
 | `channelRegistry` | side-effect outputs (see _Channels_) |
 | `fnDispose` | runtime cleanup hooks for registered fns |
 | `precomputeGeneration: number` | topology-version token (see _Non-essential optimization_) |
+| `segments: Map<Key, SegmentManifest>` | loaded-segment registry (see _Segment manifests_) |
+| `perfScratch`, `perfFunctions`, `perfChannels` | opt-in tracking buckets (see _Performance tracking_) — empty unless `config_performance.v.enabled` is true |
 
 A cel:
 
@@ -330,6 +361,19 @@ For coalescing channels: $\rho_C > 1$ doesn't grow memory but produces user-visi
 
 **Fixed-point drains.** When `set(..., { flush: 'all' })` triggers a drain, channel commits may write back to the graph and kick further cascades. The drain iterates until no channel reports `hasPending`, capped at 64 — runaway feedback surfaces as an error rather than a hung tab.
 
+## Performance tracking
+
+Off by default. Set `config_performance.v.enabled = true` and the kernel writes per-cycle stats to cels under the `"stats"` segment: `stats_precompute` (graph-level memory + topology snapshot), `stats_cycles` (per-cycle timing + fired/skipped counts + per-wave durations), `stats_functions` (per-lambda call count + total ns), `stats_channels` (per-channel enqueues/drains/queueDepth). The disabled hot path is one ternary check per `fireCel` and one `Map.get` per cycle — no allocations.
+
+Two distinct env cels live in the `"config"` segment:
+
+- **`stats_environment`** — kernel-detected runtime capabilities (workers, SAB, atomics, WASM SIMD, WebGPU adapter, hardwareConcurrency, high-res timing). Populated regardless of `enabled` because hosts use it to gate optional optimization registrations. Filtered from dehydrate.
+- **`config_environment`** — host-managed project profile: derived segments list, host feature flags (`setFeatureFlag`), free-form tags (`setEnvironmentTag`), an optional frozen runtime snapshot (`freezeRuntimeProfile`). Round-trips through dehydrate so a saved project knows what runtime it was last validated against. Stats snapshots include a `configEnvGen` correlation field.
+
+Locked core fns: `resetStats`, `refreshEnvironmentStats`, `setFeatureFlag`, `setEnvironmentTag`, `syncSegmentsToConfig`, `freezeRuntimeProfile`, `compareRuntimeProfile`. The `config_performance.v` cel is bound to a Zod `passthrough()` schema so misconfiguration throws at hydrate while leaving room for host-defined extension flags.
+
+Memory accounting uses a depth-capped `estimateBytes` heuristic — exact for typed arrays / `ArrayBuffer`, table for primitives, recursive for plain objects — with optional per-schema (`SchemaMetadata.byteLength`) and per-tag (`TagHandler.byteLength`) overrides for opaque values. See `examples/perf-tracking-demo` for the full surface.
+
 ## Language interop and WASM
 
 Plastron treats every language as a compiler — a Fn that takes source, returns a runtime body. The default is the S-expression formula compiler at `state.fns.get("f")`. To swap in another, register at a different key:
@@ -409,6 +453,8 @@ Each is its own package; treat them as examples of how to extend the kernel rath
 - `examples/plastron-sheet` — Excel-style spreadsheet UI on top of plastron.
 - `examples/plastron-spa-demo` — Vite SPA with nav and lazy segment loading.
 - `examples/eshkol-terminal` — REPL for the Eshkol kind.
+- `examples/segments-introspect-demo` — manifest-driven hydrate / cascade-flush / round-trip walkthrough.
+- `examples/perf-tracking-demo` — opt-in stats cels + env config + 28-check smoke test.
 
 Each example has its own README and is run with `npm install && npm run dev` (or `npx tsx src/index.ts` for the node-only ones).
 
