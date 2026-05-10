@@ -4,8 +4,8 @@ import type {
 import { createDomChannel, type DomRoot, type PainterRoot, type DomChannelHandle } from "./paint.js";
 import { diffVNodes } from "./diff.js";
 import {
-  vnodeEquals, vnodeSchema,
-  VNODE_SCHEMA_KEY, VNODE_IS_CHANGED_KEY, VNODE_DIFF_KEY,
+  vnodeByteLength, vnodeEquals, vnodeSchema,
+  VNODE_SCHEMA_KEY, VNODE_IS_CHANGED_KEY, VNODE_DIFF_KEY, VNODE_BYTELENGTH_KEY,
   type VNode,
 } from "./vnode.js";
 
@@ -53,12 +53,12 @@ export const DEFAULT_DOM_CHANNEL_KEY = "plastronDom" as const;
  *  require any other plastron-* package to be loaded). */
 export const plastronDomManifest: SegmentManifest = {
   segment: PLASTRON_DOM_SEGMENT,
-  version: "1.0.0",
+  version: "1.0.1",
   description:
     "rAF-batched DOM painter — diffs vnode trees and patches the DOM via a channel.",
   provides: {
     schemas: [VNODE_SCHEMA_KEY],
-    lambdas: [VNODE_IS_CHANGED_KEY, VNODE_DIFF_KEY],
+    lambdas: [VNODE_IS_CHANGED_KEY, VNODE_DIFF_KEY, VNODE_BYTELENGTH_KEY],
     channels: [DEFAULT_DOM_CHANNEL_KEY],
     celSegments: [PLASTRON_DOM_SEGMENT],
   },
@@ -68,8 +68,8 @@ export type {
   VNode, VText, VElement, AttrValue, EventBinding, EventInfo,
 } from "./vnode.js";
 export {
-  el, text, vnodeEquals, vnodeSchema,
-  VNODE_SCHEMA_KEY, VNODE_IS_CHANGED_KEY, VNODE_DIFF_KEY,
+  el, text, vnodeEquals, vnodeByteLength, vnodeSchema,
+  VNODE_SCHEMA_KEY, VNODE_IS_CHANGED_KEY, VNODE_DIFF_KEY, VNODE_BYTELENGTH_KEY,
 } from "./vnode.js";
 export type { Patch, PatchEl, PatchInit, PatchReplace, PatchText, PatchNoop, ChildPatch } from "./diff.js";
 export { diffVNodes, isNoop } from "./diff.js";
@@ -140,6 +140,7 @@ export const installDom = (
     key: VNODE_SCHEMA_KEY,
     isChanged: VNODE_IS_CHANGED_KEY,
     diff: VNODE_DIFF_KEY,
+    byteLength: VNODE_BYTELENGTH_KEY,
   });
 
   // Stamp each root cel with the live schema. Hydrate's auto-wire loop
@@ -168,6 +169,8 @@ export const installDom = (
       !vnodeEquals(prev as VNode, next as VNode)],
     [VNODE_DIFF_KEY, (prev: unknown, next: unknown) =>
       diffVNodes(prev as VNode | null, next as VNode)],
+    [VNODE_BYTELENGTH_KEY, (v: unknown) =>
+      vnodeByteLength(v as VNode | null | undefined)],
   ]);
   const patchCels: DehydratedCel[] = [];
   const patchCelByRoot: Record<string, string> = {};

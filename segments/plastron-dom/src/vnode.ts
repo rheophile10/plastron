@@ -37,6 +37,13 @@ export const VNODE_IS_CHANGED_KEY = "plastronDom:vnodeIsChanged" as const;
  *  audit/sync/devtool consumers can. */
 export const VNODE_DIFF_KEY = "plastronDom:vnodeDiff" as const;
 
+/** LambdaKey of the `byteLength` fn for vnodeSchema. Walks the vnode
+ *  tree and reports an approximate byte count for the per-cel memory
+ *  reporting in plastron's perf-tracking pass. More accurate than the
+ *  kernel's depth-capped recursive default (which under-counts trees
+ *  deeper than 4 levels). */
+export const VNODE_BYTELENGTH_KEY = "plastronDom:vnodeByteLength" as const;
+
 export interface VText {
   type: "text";
   text: string;
@@ -198,5 +205,60 @@ const childrenEqual = (
     if (!vnodeEquals(ac[i]!, bc[i]!)) return false;
   }
   return true;
+};
+
+// ------------------------------------------------------------------------
+// Byte-length estimation for the perf-tracking accountant. Walks the
+// tree once and approximates retained bytes — UTF-16 string costs
+// (2 bytes/char) plus per-node and per-record object overheads. Fixed
+// constants are intentionally fuzzy: this is a relative reporting tool,
+// not a heap auditor.
+// ------------------------------------------------------------------------
+
+const NODE_OVERHEAD     = 24;   // per object hidden class + slot pointers
+const KEY_OVERHEAD      = 8;    // per record entry: name pointer + value slot
+const ARRAY_OVERHEAD    = 24;
+const PRIMITIVE_BYTES   = 8;    // number / boolean / null
+
+const recordBytes = (r: Record<string, unknown> | undefined): number => {
+  if (!r) return 0;
+  let s = NODE_OVERHEAD;
+  for (const k of Object.keys(r)) {
+    s += 2 * k.length + KEY_OVERHEAD;
+    const v = r[k];
+    if (typeof v === "string") s += 2 * v.length;
+    else                       s += PRIMITIVE_BYTES;
+  }
+  return s;
+};
+
+const eventsBytes = (e: Record<string, EventBinding> | undefined): number => {
+  if (!e) return 0;
+  let s = NODE_OVERHEAD;
+  for (const k of Object.keys(e)) {
+    s += 2 * k.length + KEY_OVERHEAD;
+    const b = e[k]!;
+    s += NODE_OVERHEAD;
+    if (b.set)      s += 2 * b.set.length;
+    if (b.dispatch) s += 2 * b.dispatch.length;
+    // value / payload — treat as 8 if primitive, else best-effort 32.
+    if ("value"   in b) s += typeof b.value   === "string" ? 2 * (b.value as string).length : 32;
+    if ("payload" in b) s += typeof b.payload === "string" ? 2 * (b.payload as string).length : 32;
+  }
+  return s;
+};
+
+export const vnodeByteLength = (n: VNode | null | undefined): number => {
+  if (n == null) return 0;
+  if (n.type === "text") return NODE_OVERHEAD + 2 * n.text.length;
+  let s = NODE_OVERHEAD + 2 * n.tag.length;
+  s += recordBytes(n.attrs);
+  s += recordBytes(n.style);
+  s += eventsBytes(n.events);
+  if (n.children && n.children.length > 0) {
+    s += ARRAY_OVERHEAD;
+    for (const c of n.children) s += vnodeByteLength(c);
+  }
+  return s;
 };
 
