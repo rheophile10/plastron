@@ -1,0 +1,21 @@
+{
+  "name": "plastron-react-host",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "React host containment + bidirectional bridge hooks for plastron — embed plastron-painted DOM inside a React tree without React reconciling what plastron put there.",
+  "main": "src/index.ts",
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "peerDependencies": {
+    "plastron": "*",
+    "plastron-dom": "*",
+    "react": "^18 || ^19"
+  },
+  "devDependencies": {
+    "@types/react": "^19",
+    "typescript": "~5.9.3",
+    "zod": "^4.4.3"
+  }
+}
