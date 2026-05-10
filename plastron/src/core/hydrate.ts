@@ -2,13 +2,14 @@ import type { z } from "zod";
 import type {
   Cel, Compiler, DehydratedCel, Dehydrate, Fn, Hydrate,
   Key, LambdaKey, LambdaMetadata, SchemaKey,
-  Segment, TagHandler, TagKey,
+  Segment, SegmentDependency, SegmentManifest, TagHandler, TagKey,
 } from "../types/index.js";
 import {
   PRECOMPUTED_STATES_KEY, bfsDownstream, precompute,
   type PrecomputedIndexes,
 } from "./precompute.js";
 import { dehydrateSchemas, hydrateSchemas } from "./schema-conversion.js";
+import { satisfies } from "./segments.js";
 
 // Compile a cel's source body (cel.f) via the compiler at
 // state.fns.get(cel.l ?? "f"). Sets cel._fn, cel._dispose, and
@@ -153,6 +154,57 @@ const deflate = (
 };
 
 export const hydrate: Hydrate = (state, segments, fns) => {
+  // Pass 0 — collect manifests from input segments AND validate
+  // dependsOn against (a) already-loaded manifests in state.segments
+  // and (b) other manifests in this same hydrate call. Done before
+  // any state mutation so a failed dependency check leaves the state
+  // untouched (matches existing atomicity).
+  const incomingManifests = new Map<Key, SegmentManifest>();
+  for (const seg of segments) {
+    if (seg.manifest) incomingManifests.set(seg.key, seg.manifest);
+  }
+  if (incomingManifests.size > 0) {
+    const allKnown = new Map(state.segments);
+    for (const [k, m] of incomingManifests) allKnown.set(k, m);
+
+    // Optional-dep warnings are emitted via globalThis.console when
+    // available — the kernel is environment-agnostic and doesn't
+    // import any host module. Required-dep failures throw and are
+    // never silently logged.
+    const warn = (msg: string): void => {
+      const c = (globalThis as { console?: { warn?: (m: string) => void } }).console;
+      if (c?.warn) c.warn(msg);
+    };
+
+    const missing: Array<{ segment: Key; needs: SegmentDependency }> = [];
+    for (const [k, m] of incomingManifests) {
+      if (!m.dependsOn) continue;
+      for (const dep of m.dependsOn) {
+        const required = dep.required !== false;
+        const have = allKnown.get(dep.segment);
+        if (!have) {
+          if (required) missing.push({ segment: k, needs: dep });
+          else warn(`segment "${k}" optional dep "${dep.segment}" not loaded`);
+          continue;
+        }
+        if (dep.semver && !satisfies(have.version, dep.semver)) {
+          if (required) missing.push({ segment: k, needs: dep });
+          else warn(
+            `segment "${k}" wants "${dep.segment}@${dep.semver}", ` +
+            `have ${have.version}`,
+          );
+        }
+      }
+    }
+    if (missing.length > 0) {
+      throw new Error(
+        `hydrate: unsatisfied segment dependencies:\n` +
+        missing.map((m) => `  - "${m.segment}" needs "${m.needs.segment}"` +
+                           (m.needs.semver ? `@${m.needs.semver}` : "")).join("\n"),
+      );
+    }
+  }
+
   // Pass 1 — pull all segment-supplied metadata (schemas, fnMetaData,
   // schemaMetadata) into state. Doing this before fn install lets
   // segment-supplied locks gate the upcoming fn replacements; doing it
@@ -253,6 +305,17 @@ export const hydrate: Hydrate = (state, segments, fns) => {
 
   precompute(state);
 
+  // Record manifests only after precompute returns successfully. Doing
+  // it here (rather than before precompute) means a precompute throw
+  // (e.g. a cel-graph cycle introduced by this hydrate) leaves
+  // state.segments untouched — matching the spec's "validate first,
+  // mutate state.segments only on success" atomicity claim. The cels
+  // themselves may already be partially in state.cels (pre-existing
+  // behavior), but the manifest registry stays clean.
+  for (const [k, m] of incomingManifests) {
+    state.segments.set(k, m);
+  }
+
   // Seed the lazy downstream cache from any segment-supplied closures.
   // Consumer skips the first-write BFS for these keys. Closures are
   // trusted as-is — validation against the live `inputMap` is a host
@@ -337,7 +400,25 @@ export const dehydrate: Dehydrate = (state, opts) => {
       if (downstream)        seg.downstream = downstream;
       pinned = true;
     }
+    // Attach the recorded manifest if one was registered for this
+    // segment. Segments hydrated without a manifest emit cleanly
+    // without one — round-trip identity for the legacy world.
+    const manifest = state.segments.get(key);
+    if (manifest) seg.manifest = manifest;
     segments.push(seg);
   }
+
+  // Manifests for loaded segments that contributed no cels (e.g. a
+  // pure "config-installer" segment, or a segment whose only cels
+  // are locked seeds in "core") would be lost otherwise. Emit them
+  // as cel-less Segment entries so a hydrate-of-the-output round-
+  // trips the manifest set faithfully. Skip "core" — its bootstrap
+  // manifest is re-seeded by createInitialState.
+  for (const [key, manifest] of state.segments) {
+    if (key === "core") continue;
+    if (bySegment.has(key)) continue;
+    segments.push({ key, cels: [], manifest });
+  }
+
   return segments;
 };

@@ -1,4 +1,4 @@
-import type { Cel, Key, State } from "./types/index.js";
+import type { Cel, Key, SegmentManifest, State } from "./types/index.js";
 import { coreFns, coreFnMetadata } from "./core/index.js";
 import { PRECOMPUTED_STATES_KEY, type PrecomputedIndexes } from "./core/precompute.js";
 
@@ -6,6 +6,11 @@ import { PRECOMPUTED_STATES_KEY, type PrecomputedIndexes } from "./core/precompu
 // createInitialState — return a fresh State with coreFns preinstalled,
 // the precomputedStates seed cel locked, and locked metadata seeded
 // for every core fn so subsequent hydrates can't overwrite them.
+//
+// Also seeds state.segments with a single "core" manifest declaring
+// the bootstrap registry: the core fns and the locked
+// precomputedStates seed cel. Hosts can introspect this via the
+// `listSegments` core fn even before any user segment hydrates.
 //
 // Calling convention: every kernel fn receives positional args. To run
 // hydrate or runCycle, pass `(state, …)`:
@@ -28,10 +33,24 @@ const seedPrecomputedStatesCel = (): Cel => ({
   locked: true,
 });
 
+const buildCoreManifest = (): SegmentManifest => ({
+  segment: "core",
+  version: "1.0.0",
+  description: "Kernel-internal seeds. Always present.",
+  provides: {
+    celSegments: ["core"],
+    lambdas: Array.from(coreFns.keys()),
+  },
+});
+
 export const createInitialState = (): State => {
   const cels = new Map<Key, Cel>();
   const seed = seedPrecomputedStatesCel();
   cels.set(seed.key, seed);
+
+  const segments = new Map<Key, SegmentManifest>([
+    ["core", buildCoreManifest()],
+  ]);
 
   // coreFns and coreFnMetadata are shared across every state instance,
   // so we clone — hydrate mutates state.fns / state.fnMetadata, and we
@@ -46,7 +65,11 @@ export const createInitialState = (): State => {
     fnDispose:            new Map(),
     channelRegistry:      new Map(),
     precomputeGeneration: 0,
+    segments,
   };
 };
 
 export type * from "./types/index.js";
+export {
+  getSegmentManifest, listSegments, findDependents, satisfies,
+} from "./core/segments.js";
