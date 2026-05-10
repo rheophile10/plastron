@@ -1,5 +1,6 @@
 import type { Fn, Key, State } from "../types/index.js";
 import { disposeCel } from "./hydrate.js";
+import { flushChannels } from "./input.js";
 import { precompute } from "./precompute.js";
 
 // ============================================================================
@@ -14,24 +15,34 @@ import { precompute } from "./precompute.js";
 // precomputedStates seed in segment "core") and shouldn't be torn
 // down by a segment-level flush.
 //
+// Channels are drained to fixed point before any cel is deleted.
+// A channel queue may hold {cel, state} for a soon-to-be-removed cel;
+// committing afterwards would (a) keep that cel object alive past
+// deletion and (b) produce a write for a cel no longer in state.cels.
+// Channel handlers themselves are NOT disposed — they're keyed
+// globally, may be shared by other segments, and are the host's to
+// register and tear down.
+//
 // After deletions, re-runs precompute so the topology indexes
 // (waveCascade, downstream, dynamicCascade) reflect the new graph.
 // No-ops when nothing matches.
 // ============================================================================
 
-export const flush: Fn = (state: State, segmentKey: Key) => {
+export const flush: Fn = async (state: State, segmentKey: Key) => {
   const toRemove: Key[] = [];
   for (const cel of state.cels.values()) {
     if (cel.segment !== segmentKey) continue;
     if (cel.locked) continue;
     toRemove.push(cel.key);
   }
+  if (toRemove.length === 0) return state;
+  await flushChannels(state, "all");
   for (const key of toRemove) {
     const cel = state.cels.get(key);
     if (!cel) continue;
     disposeCel(cel, state.tagRegistry);
     state.cels.delete(key);
   }
-  if (toRemove.length > 0) precompute(state);
+  precompute(state);
   return state;
 };
