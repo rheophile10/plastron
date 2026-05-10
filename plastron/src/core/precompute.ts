@@ -120,10 +120,18 @@ export const precompute = (state: State): void => {
   // slow paths until the optional pass repopulates. Without this,
   // a topology change could leave stale closures pointing at removed
   // or reshaped cels.
+  //
+  // Read-gate the invalidation: writing `undefined` into a slot that
+  // doesn't exist on the cel's hidden class would *install* the slot,
+  // polluting the shape of every pure-data cel (config_*, scalar
+  // values, etc.) with three runtime-only fields it never uses. The
+  // read returns undefined without installing — the write is then
+  // skipped. For cels that *do* have the slot populated by a prior
+  // precompute, the write goes through and behavior is unchanged.
   for (const cel of cels.values()) {
-    cel._inputEntries = undefined;
-    cel._channelHandlers = undefined;
-    cel._evaluate = undefined;
+    if (cel._inputEntries    !== undefined) cel._inputEntries    = undefined;
+    if (cel._channelHandlers !== undefined) cel._channelHandlers = undefined;
+    if (cel._evaluate        !== undefined) cel._evaluate        = undefined;
   }
 
   // Bump the generation BEFORE scheduling — precomputeOptional captures
