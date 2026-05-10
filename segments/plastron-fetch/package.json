@@ -1,0 +1,17 @@
+{
+  "name": "plastron-fetch",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "HTTP requests as async cels — fetchJson / fetchText / fetchBytes lambdas, request/response schemas, optional pass-through coalescing channel.",
+  "main": "src/index.ts",
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}
