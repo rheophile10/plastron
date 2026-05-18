@@ -1,6 +1,6 @@
 import type { Fn, LambdaKey, State } from "../../../plastron/src/index.js";
 import {
-  el, text, vnodeEquals, diffVNodes,
+  el, onClick, text, vnodeEquals, diffVNodes,
   VNODE_IS_CHANGED_KEY, VNODE_DIFF_KEY,
   type VNode,
 } from "../../../segments/plastron-dom/src/index.js";
@@ -64,11 +64,11 @@ const buildTree: Fn = (inputs: TreeInputs): VNode => {
     ),
 
     el("section", { class: "controls" },
-      el("button", { onClick: { dispatch: "session:hotter" } },   text("煆 hotter")),
-      el("button", { onClick: { dispatch: "session:cooler" } },   text("冷 cooler")),
-      el("button", { onClick: { dispatch: "session:thicker" } },  text("厚 thicker")),
-      el("button", { onClick: { dispatch: "session:thinner" } },  text("薄 thinner")),
-      el("button", { onClick: { dispatch: "session:nextCharge" } }, text("貞 next charge")),
+      el("button", { onClick: onClick("session:hotter") },     text("煆 hotter")),
+      el("button", { onClick: onClick("session:cooler") },     text("冷 cooler")),
+      el("button", { onClick: onClick("session:thicker") },    text("厚 thicker")),
+      el("button", { onClick: onClick("session:thinner") },    text("薄 thinner")),
+      el("button", { onClick: onClick("session:nextCharge") }, text("貞 next charge")),
     ),
 
     el("p", { class: "dials" }, text(`heat = ${heat.toFixed(0)}, thickness = ${thickness.toFixed(0)}`)),

@@ -1,5 +1,5 @@
 import type { Fn, LambdaKey, Segment } from "../../../plastron/src/types/index.js";
-import { el, type VNode } from "../../../segments/plastron-dom/src/index.js";
+import { cx, el, type VNode } from "../../../segments/plastron-dom/src/index.js";
 import type { SegmentBundle } from "./segments/counter.js";
 
 // ========================================================================
@@ -33,7 +33,7 @@ export const buildShellSegment = (): SegmentBundle => {
   ): VNode => {
     const navLink = (path: string, key: string, label: string): VNode =>
       el("a", {
-        class: view === key ? "active" : "",
+        class: cx(view === key && "active"),
         href: `#${path}`,
       }, label);
 

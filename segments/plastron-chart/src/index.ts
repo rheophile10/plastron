@@ -1,4 +1,4 @@
-import { el, type VNode } from "../../plastron-dom/src/index.js";
+import { el, when, type VNode } from "../../plastron-dom/src/index.js";
 
 // ========================================================================
 // segment: plastron-chart
@@ -200,9 +200,10 @@ export const barChart = (opts: BarChartOptions): VNode => {
       },
     }, d.label);
 
-    const out: VNode[] = [bar, label];
-    if (opts.showValues) {
-      out.push(el("div", {
+    return el("div", null,
+      bar,
+      label,
+      when(opts.showValues, () => el("div", {
         class: "pc-value",
         style: {
           position: "absolute",
@@ -214,9 +215,8 @@ export const barChart = (opts: BarChartOptions): VNode => {
           color: "#1f2937",
           "font-family": "system-ui, sans-serif",
         },
-      }, formatTick(d.value)));
-    }
-    return el("div", null, ...out);
+      }, formatTick(d.value))),
+    );
   });
 
   // ---- axes (left + bottom) ------------------------------------------
@@ -246,41 +246,37 @@ export const barChart = (opts: BarChartOptions): VNode => {
   ];
 
   // ---- decorations (title + y-axis label) ----------------------------
-  const decorations: VNode[] = [];
-  if (opts.title) {
-    decorations.push(el("div", {
-      class: "pc-title",
-      style: {
-        position: "absolute",
-        left: "0",
-        top: "8px",
-        width: px(lay.W),
-        "text-align": "center",
-        "font-size": "14px",
-        "font-weight": "600",
-        color: "#0f172a",
-        "font-family": "system-ui, sans-serif",
-      },
-    }, opts.title));
-  }
-  if (opts.yLabel) {
-    decorations.push(el("div", {
-      class: "pc-ylabel",
-      style: {
-        position: "absolute",
-        left: px(0),
-        top: px(lay.padT + lay.innerH / 2),
-        width: "1px",
-        height: "1px",
-        "font-size": "12px",
-        color: "#475569",
-        "font-family": "system-ui, sans-serif",
-        "white-space": "nowrap",
-        transform: "rotate(-90deg) translate(-50%, -50%)",
-        "transform-origin": "0 0",
-      },
-    }, opts.yLabel));
-  }
+  const titleNode = when(opts.title, () => el("div", {
+    class: "pc-title",
+    style: {
+      position: "absolute",
+      left: "0",
+      top: "8px",
+      width: px(lay.W),
+      "text-align": "center",
+      "font-size": "14px",
+      "font-weight": "600",
+      color: "#0f172a",
+      "font-family": "system-ui, sans-serif",
+    },
+  }, opts.title!));
+
+  const yLabelNode = when(opts.yLabel, () => el("div", {
+    class: "pc-ylabel",
+    style: {
+      position: "absolute",
+      left: px(0),
+      top: px(lay.padT + lay.innerH / 2),
+      width: "1px",
+      height: "1px",
+      "font-size": "12px",
+      color: "#475569",
+      "font-family": "system-ui, sans-serif",
+      "white-space": "nowrap",
+      transform: "rotate(-90deg) translate(-50%, -50%)",
+      "transform-origin": "0 0",
+    },
+  }, opts.yLabel!));
 
   return el("div", {
     class: "pc-chart",
@@ -291,7 +287,8 @@ export const barChart = (opts: BarChartOptions): VNode => {
       "box-sizing": "border-box",
     },
   },
-    ...decorations,
+    titleNode,
+    yLabelNode,
     ...gridChildren,
     ...axes,
     ...barChildren,

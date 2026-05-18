@@ -83,13 +83,6 @@ const weatherCondOf  = (d: WeatherData): string =>
 const weatherErrorOf = (d: WeatherData): string => d.state === "error" ? d.message : "";
 
 // Async action lambdas — referenced by name from formulas.
-const setCity: Fn = async (...args: unknown[]) => {
-  const [state, , event] = args as [State, unknown, Event];
-  const target = event?.target as { value?: string } | null;
-  const value = target?.value ?? "";
-  await (state.fns.get("set") as Fn)(state, "weatherCity", value);
-};
-
 const fetchAction: Fn = async (...args: unknown[]) => {
   const [state] = args as [State];
   const setFn = state.fns.get("set") as Fn;
@@ -194,8 +187,13 @@ export const weatherSegment: SegmentBundle = {
       {
         key: "weatherInput",
         l: "f",
+        // bindValue ⇒ `{ set: "weatherCity", extract: "value" }`. Writes the
+        // input's actual text to the cel on each `input` event. Replaces an
+        // earlier `(onSet "weatherCity")` that silently wrote the EventInfo
+        // record (the kernel's no-value-no-extract fallback) instead of the
+        // typed text — latent bug the helper closes by construction.
         f: '(dom "input" (obj "type" "text" "placeholder" "City" "value" weatherCity ' +
-                            '"onInput" (onSet "weatherCity")))',
+                            '"onInput" (bindValue "weatherCity")))',
         segment: "weather",
       },
       {
@@ -226,7 +224,6 @@ export const weatherSegment: SegmentBundle = {
     ],
   },
   fns: new Map<LambdaKey, Fn>([
-    ["weather:setCity", setCity],
-    ["weather:fetch",   fetchAction],
+    ["weather:fetch", fetchAction],
   ]),
 };

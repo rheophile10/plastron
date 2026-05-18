@@ -38,15 +38,5 @@ export const classifyInput = (
   return { key: addr, v: trimmed, segment: SHEET_SEGMENT };
 };
 
-/** Pretty-print a cel value for the grid. Integers stay bare; finite
- *  floats get two decimals; non-finite numbers fall through to "—";
- *  null / undefined / "" all render as the empty string. */
-export const displayValue = (v: unknown): string => {
-  if (v === null || v === undefined || v === "") return "";
-  if (typeof v === "number") {
-    return Number.isFinite(v)
-      ? (Number.isInteger(v) ? String(v) : v.toFixed(2))
-      : "—";
-  }
-  return String(v);
-};
+// displayValue moved to plastron-dom; re-exported from this segment's
+// index.ts to preserve the public surface.

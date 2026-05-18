@@ -1,6 +1,5 @@
-import { el, type VNode } from "../../../plastron-dom/src/index.js";
+import { cx, displayValue, el, onClick, when, type VNode } from "../../../plastron-dom/src/index.js";
 import { COLS, ROWS, addressOf, colLetter, rectFor } from "../domain/address.js";
-import { displayValue } from "../domain/parse.js";
 import type { CopyMark } from "../actions/clipboard.js";
 
 // ============================================================================
@@ -44,14 +43,14 @@ export const renderGrid = (i: GridInputs): VNode => {
       const value      = i.cellValue(addr);
       const hasFormula = i.sources[addr] !== undefined;
 
-      const classes = [
+      const classes = cx(
         "cell",
-        isAnchor ? "anchor" : "",
-        isInRange && !isAnchor ? "range" : "",
-        isEditing ? "editing" : "",
-        hasFormula ? "formula" : "",
-        typeof value === "number" ? "numeric" : "",
-      ].filter(Boolean).join(" ");
+        isAnchor && "anchor",
+        isInRange && !isAnchor && "range",
+        isEditing && "editing",
+        hasFormula && "formula",
+        typeof value === "number" && "numeric",
+      );
 
       let inner: VNode | string;
       if (isEditing) {
@@ -65,8 +64,8 @@ export const renderGrid = (i: GridInputs): VNode => {
           class: "cell-input",
           type: "text",
           value: seed,
-          onKeyDown: { dispatch: "sheet:editKeyDown", payload: addr },
-          onBlur:    { dispatch: "sheet:editBlur",    payload: addr },
+          onKeyDown: onClick("sheet:editKeyDown", addr),
+          onBlur:    onClick("sheet:editBlur",    addr),
         });
       } else {
         inner = displayValue(value);
@@ -74,9 +73,9 @@ export const renderGrid = (i: GridInputs): VNode => {
 
       cells.push(el("td", {
         class: classes,
-        onMouseDown:  { dispatch: "sheet:mouseDown",  payload: addr },
-        onMouseEnter: { dispatch: "sheet:mouseEnter", payload: addr },
-        onDblClick:   { dispatch: "sheet:edit",       payload: addr },
+        onMouseDown:  onClick("sheet:mouseDown",  addr),
+        onMouseEnter: onClick("sheet:mouseEnter", addr),
+        onDblClick:   onClick("sheet:edit",       addr),
       }, inner as string));
     }
     bodyRows.push(el("tr", null, ...cells));
@@ -87,19 +86,15 @@ export const renderGrid = (i: GridInputs): VNode => {
   // accurate even if column widths drift from the CSS pixel values).
   // We just emit the element with `data-start` / `data-end` so the
   // helper knows which cells to measure.
-  const wrapperChildren: VNode[] = [
+  return el("div", { class: "grid-wrapper" },
     el("table", { class: "grid" },
       el("thead", null, el("tr", null, ...headerCells)),
       el("tbody", null, ...bodyRows),
     ),
-  ];
-  if (i.copyMark) {
-    wrapperChildren.push(el("div", {
+    when(i.copyMark, () => el("div", {
       class: "copy-marquee",
-      "data-start": i.copyMark.start,
-      "data-end":   i.copyMark.end,
-    }));
-  }
-
-  return el("div", { class: "grid-wrapper" }, ...wrapperChildren);
+      "data-start": i.copyMark!.start,
+      "data-end":   i.copyMark!.end,
+    })),
+  );
 };

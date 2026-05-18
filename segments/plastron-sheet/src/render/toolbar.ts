@@ -1,5 +1,4 @@
-import { el, type VNode } from "../../../plastron-dom/src/index.js";
-import { displayValue } from "../domain/parse.js";
+import { displayValue, el, onClick, type VNode } from "../../../plastron-dom/src/index.js";
 
 // ============================================================================
 // Toolbar — name box on the left, formula bar on the right. Pure
@@ -37,9 +36,9 @@ export const renderToolbar = (i: ToolbarInputs): VNode => {
       // Disable the bar when no cell is selected — keeps the empty
       // anchor case from accepting random typing.
       disabled: !i.selected,
-      onFocus:   { dispatch: "sheet:formulaBarFocus" },
-      onKeyDown: { dispatch: "sheet:formulaBarKeyDown" },
-      onBlur:    { dispatch: "sheet:formulaBarBlur" },
+      onFocus:   onClick("sheet:formulaBarFocus"),
+      onKeyDown: onClick("sheet:formulaBarKeyDown"),
+      onBlur:    onClick("sheet:formulaBarBlur"),
     }),
   );
 };

@@ -154,8 +154,9 @@ export {
 } from "./domain/address.js";
 export type { Rect } from "./domain/address.js";
 export {
-  classifyInput, displayValue, SHEET_SEGMENT,
+  classifyInput, SHEET_SEGMENT,
 } from "./domain/parse.js";
+export { displayValue } from "../../plastron-dom/src/index.js";
 export { buildTSV, parseTSV } from "./domain/tsv.js";
 export {
   edit, editKeyDown, editBlur, typeIntoSelected,

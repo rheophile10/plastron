@@ -1,5 +1,5 @@
 import {
-  el, text, type EventBinding, type VNode,
+  bindValue, el, onClick, onSet, text, type VNode,
 } from "../../../../segments/plastron-dom/src/index.js";
 import type { SegmentBundle } from "./counter.js";
 
@@ -93,11 +93,10 @@ const obj = (...kv: unknown[]): Record<string, unknown> => {
   return r;
 };
 
-const onSet = (target: string, value?: unknown): EventBinding =>
-  value === undefined ? { set: target } : { set: target, value };
-
-const onDispatch = (lambdaKey: string, payload?: unknown): EventBinding =>
-  payload === undefined ? { dispatch: lambdaKey } : { dispatch: lambdaKey, payload };
+// onSet / onDispatch — re-exported from plastron-dom (onClick there).
+// Kept under the formula-side name `onDispatch` since formulas in
+// counter.ts / weather.ts reference it that way.
+const onDispatch = onClick;
 
 const concat = (...args: unknown[]): string => args.map((a) => String(a ?? "")).join("");
 
@@ -118,6 +117,7 @@ export const domBuildersSegment: SegmentBundle = {
       { key: "obj",        v: obj,        segment: SEGMENT },
       { key: "onSet",      v: onSet,      segment: SEGMENT },
       { key: "onDispatch", v: onDispatch, segment: SEGMENT },
+      { key: "bindValue",  v: bindValue,  segment: SEGMENT },
       { key: "concat",     v: concat,     segment: SEGMENT },
       { key: "ifx",        v: ifFn,       segment: SEGMENT },
       { key: "eq",         v: eqFn,       segment: SEGMENT },
