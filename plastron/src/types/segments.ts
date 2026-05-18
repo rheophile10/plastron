@@ -59,6 +59,11 @@ export interface SegmentProvides {
    *  Channels are typically host-installed; declare here only when
    *  the segment owns the registration. */
   channels?: ChannelKey[];
+  /** Tag keys for which this segment registers a SlotAccessor in
+   *  state.slotAccessors. Segments installing typed-array envelopes
+   *  (Column, Table, Matrix) declare the tag(s) they own here so
+   *  teardown can unregister the accessor. */
+  slotAccessors?: TagKey[];
   /** cel.segment values this segment owns. Usually [Segment.key],
    *  but a package that places cels in shared segments (e.g. "config",
    *  "stats") declares those here too. Used by flush to know whether

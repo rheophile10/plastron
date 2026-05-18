@@ -183,6 +183,7 @@ export const createInitialState = (): State => {
 };
 
 export type * from "./types/index.js";
+export { precompute, precomputeOptional } from "./core/precompute.js";
 export {
   getSegmentManifest, listSegments, findDependents, satisfies,
 } from "./core/segments.js";
