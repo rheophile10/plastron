@@ -52,6 +52,15 @@ export interface VText {
 export interface VElement {
   type: "el";
   tag: string;
+  /** Child-reconciliation hint. UNRELATED to `cel.key` — this is a
+   *  string id used only by `diffVNodes` when reconciling a parent's
+   *  children list, to match "the same logical element across
+   *  renders" by identity instead of position. When every child in
+   *  both old and new children lists is a VElement with a defined
+   *  `key`, the diff switches to keyed reconciliation and emits a
+   *  `reconcile` ChildPatch. Mixed or missing keys → positional
+   *  diff (the default). */
+  key?: string;
   attrs?: Record<string, AttrValue>;
   /** Inline styles, applied per-property at paint time. Diffed
    *  separately from attrs so a single style change doesn't reapply
@@ -67,11 +76,23 @@ export type AttrValue = string | number | boolean | null;
 
 export interface EventBinding {
   /** Cel key to write on event. The painter calls state.fns.get("set")
-   *  with (state, key, value). When `value` is omitted, the painter
-   *  writes a small EventInfo record describing the event. */
+   *  with (state, key, value). When neither `value` nor `extract` is
+   *  set, the painter writes a small EventInfo record describing the
+   *  event (rarely what you want for controlled inputs — use `extract`). */
   set?: string;
   /** Fixed value to write when `set` is present. */
   value?: unknown;
+  /** Read a property off `event.target` and write it to the cel named
+   *  by `set`. Lets controlled inputs route their text / checked /
+   *  numeric value to a cel without a dispatch handler.
+   *
+   *  Precedence when `set` is present: `value` > `extract` > EventInfo. */
+  extract?:
+    | "value"
+    | "checked"
+    | "valueAsNumber"
+    | "valueAsDate"
+    | "files";
   /** Lambda key in state.fns to invoke on event. The painter calls
    *  the fn with (state, payload). Use this to trigger host actions
    *  that don't fit a single cel write — lazy segment loading,
@@ -117,6 +138,7 @@ export const el = (
 ): VElement => {
   const attrs: Record<string, AttrValue> = {};
   let style: Record<string, AttrValue> | undefined;
+  let key: string | undefined;
   const events: Record<string, EventBinding> = {};
   if (props) {
     for (const [k, v] of Object.entries(props)) {
@@ -131,12 +153,15 @@ export const el = (
         events[k.slice(2).toLowerCase()] = v as EventBinding;
       } else if (k === "style" && v !== null && typeof v === "object" && !isEventLike) {
         style = v as Record<string, AttrValue>;
+      } else if (k === "key" && typeof v === "string") {
+        key = v;
       } else {
         attrs[k] = v as AttrValue;
       }
     }
   }
   const node: VElement = { type: "el", tag };
+  if (key !== undefined) node.key = key;
   if (Object.keys(attrs).length > 0) node.attrs = attrs;
   if (style && Object.keys(style).length > 0) node.style = style;
   if (Object.keys(events).length > 0) node.events = events;
@@ -155,6 +180,7 @@ export const vnodeEquals = (a: VNode, b: VNode): boolean => {
   if (a.type === "text") return a.text === (b as VText).text;
   const be = b as VElement;
   if (a.tag !== be.tag) return false;
+  if (a.key !== be.key) return false;
   if (!recordEqual(a.attrs, be.attrs)) return false;
   if (!recordEqual(a.style, be.style)) return false;
   if (!eventsEqual(a.events, be.events)) return false;
@@ -191,6 +217,7 @@ const eventsEqual = (
 export const bindingsEqual = (a: EventBinding, b: EventBinding): boolean =>
   a.set === b.set
   && Object.is(a.value, b.value)
+  && a.extract === b.extract
   && a.dispatch === b.dispatch
   && Object.is(a.payload, b.payload);
 
@@ -248,10 +275,110 @@ const eventsBytes = (e: Record<string, EventBinding> | undefined): number => {
   return s;
 };
 
+// ------------------------------------------------------------------------
+// Authoring helpers — pure data builders + binding shorthands. Not
+// load-bearing; every callsite can be written manually. They earn their
+// keep by collapsing patterns that show up in every render lambda.
+// ------------------------------------------------------------------------
+
+export type ClassPart = string | number | false | null | undefined;
+
+/** clsx-style className builder. Drops falsy parts, stringifies truthy
+ *  ones, joins with " ". Empty input → "". Helper avoids the
+ *  `class: cond ? "x" : null` pattern that pushes `null` through the
+ *  diff machinery (apply.ts removes the attr correctly, but matching
+ *  on null-vs-string-vs-empty across cycles is noisier than necessary). */
+export const cx = (...parts: ClassPart[]): string => {
+  let s = "";
+  for (const p of parts) {
+    if (!p) continue;
+    s = s.length === 0 ? String(p) : s + " " + String(p);
+  }
+  return s;
+};
+
+/** Conditional child. Returns `factory()` if `cond` is truthy, else
+ *  `null`. Children pipelines (`el(...children)`) already drop null,
+ *  so this composes naturally. Factory rather than eager value so
+ *  callers don't allocate vnode subtrees they're going to discard. */
+export const when = <T>(cond: unknown, factory: () => T): T | null =>
+  cond ? factory() : null;
+
+/** Pretty-print a value for display in a vnode. Lifted from
+ *  plastron-sheet's parse.ts; same shape every render lambda needs
+ *  when it has to put a `v` straight into a `<td>`. Integers stay
+ *  bare; finite floats get two decimals; non-finite numbers fall to
+ *  "—"; null / undefined / "" all render as the empty string. */
+export const displayValue = (v: unknown): string => {
+  if (v === null || v === undefined || v === "") return "";
+  if (typeof v === "number") {
+    return Number.isFinite(v)
+      ? (Number.isInteger(v) ? String(v) : v.toFixed(2))
+      : "—";
+  }
+  if (typeof v === "boolean") return v ? "true" : "false";
+  return String(v);
+};
+
+// ── EventBinding builders ──────────────────────────────────────────────
+
+/** Build a `dispatch:` binding. Use for buttons that call into a
+ *  registered state.fn, optionally with a static payload. */
+export const onClick = (
+  handler: string,
+  payload?: unknown,
+): EventBinding =>
+  payload === undefined ? { dispatch: handler } : { dispatch: handler, payload };
+
+/** Build a `set:` binding with a static value. Use for clicks that
+ *  write a fixed value to a cel. */
+export const onSet = (
+  target: string,
+  value?: unknown,
+): EventBinding =>
+  value === undefined ? { set: target } : { set: target, value };
+
+// ── Form-input binding builders (use `extract`) ────────────────────────
+
+/** Write `event.target.value` (the input's text) to a cel. Pair with
+ *  `value:` on the same vnode for a controlled text input. */
+export const bindValue = (key: string): EventBinding =>
+  ({ set: key, extract: "value" });
+
+/** Write `event.target.checked` (for checkboxes / radios) to a cel. */
+export const bindChecked = (key: string): EventBinding =>
+  ({ set: key, extract: "checked" });
+
+/** Write `event.target.valueAsNumber` (for `<input type="number">` /
+ *  `<input type="range">`) to a cel. Yields `NaN` for empty inputs. */
+export const bindNumber = (key: string): EventBinding =>
+  ({ set: key, extract: "valueAsNumber" });
+
+/** Write `event.target.files` (a FileList) to a cel for
+ *  `<input type="file">`. */
+export const bindFiles = (key: string): EventBinding =>
+  ({ set: key, extract: "files" });
+
+/** Compound helper for the standard controlled-text-input pattern.
+ *  Returns the props bag wired to write the input's text into `celKey`
+ *  on every `input` event, with `value` pre-filled from the cel's
+ *  current value.
+ *
+ *  Use: `el("input", inputBind("draft", inputs.draft))` instead of
+ *  authoring the inline `{ value, onInput: { set: ..., extract: "value" } }`. */
+export const inputBind = (
+  celKey: string,
+  value: unknown,
+): { value: AttrValue; onInput: EventBinding } =>
+  ({ value: value as AttrValue, onInput: bindValue(celKey) });
+
+// ------------------------------------------------------------------------
+
 export const vnodeByteLength = (n: VNode | null | undefined): number => {
   if (n == null) return 0;
   if (n.type === "text") return NODE_OVERHEAD + 2 * n.text.length;
   let s = NODE_OVERHEAD + 2 * n.tag.length;
+  if (n.key) s += 2 * n.key.length + KEY_OVERHEAD;
   s += recordBytes(n.attrs);
   s += recordBytes(n.style);
   s += eventsBytes(n.events);

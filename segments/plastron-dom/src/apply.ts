@@ -35,6 +35,7 @@ export const applyPatch = (
   reg: ListenerRegistry,
   state: State,
   setFn: Fn | undefined,
+  replaceTarget = false,
 ): Node | null => {
   switch (patch.kind) {
     case "noop":
@@ -43,6 +44,20 @@ export const applyPatch = (
     case "replace": {
       if (mounted) detachAllListeners(mounted, reg);
       const fresh = createNode(patch.node, reg, state, setFn);
+      if (replaceTarget) {
+        // Replace-target mode: the rendered root replaces the target
+        // element entirely (or replaces the previously-mounted node on
+        // subsequent replace patches). Target's `id` / `class` / `data-*`
+        // get merged into the rendered root for any attrs the rendered
+        // root doesn't already specify.
+        if (fresh.nodeType === 1) {
+          mergeTargetAttrs(target, fresh as Element);
+        }
+        const swapTarget =
+          mounted && (mounted as ChildNode).parentNode ? (mounted as ChildNode) : target;
+        swapTarget.replaceWith(fresh);
+        return fresh;
+      }
       target.replaceChildren(fresh);
       return fresh;
     }
@@ -59,6 +74,31 @@ export const applyPatch = (
       if (!mounted || mounted.nodeType !== 1) return mounted;
       applyElPatch(mounted as Element, patch, reg, state, setFn);
       return mounted;
+    }
+  }
+};
+
+// Merge target's identifying attributes (id, class, data-*) into the
+// rendered root element for any that aren't already explicitly set.
+// Used by replace-target mode so the rendered root inherits the
+// placeholder's identity (e.g. id="tbody" for krausest's harness
+// selectors).
+const mergeTargetAttrs = (target: Element, rendered: Element): void => {
+  if (!rendered.hasAttribute("id") && target.hasAttribute("id")) {
+    rendered.setAttribute("id", target.getAttribute("id")!);
+  }
+  if (target.hasAttribute("class")) {
+    const renderedClasses = rendered.getAttribute("class") ?? "";
+    const targetClasses = target.getAttribute("class")!;
+    const set = new Set(renderedClasses.split(/\s+/).filter(Boolean));
+    for (const c of targetClasses.split(/\s+/).filter(Boolean)) set.add(c);
+    if (set.size > 0) rendered.setAttribute("class", Array.from(set).join(" "));
+  }
+  const attrs = target.attributes;
+  for (let i = 0; i < attrs.length; i++) {
+    const a = attrs[i]!;
+    if (a.name.startsWith("data-") && !rendered.hasAttribute(a.name)) {
+      rendered.setAttribute(a.name, a.value);
     }
   }
 };
@@ -96,6 +136,38 @@ const applyElPatch = (
             el.removeChild(last);
           }
           break;
+        case "reconcile": {
+          // Snapshot children BEFORE we touch the DOM so "keep"
+          // entries can still find their nodes by fromIndex even
+          // after we (logically) detach the whole list.
+          const snapshot: Node[] = [];
+          for (let i = 0; i < el.childNodes.length; i++) {
+            snapshot.push(el.childNodes[i]!);
+          }
+          const keptIndices = new Set<number>();
+          for (const entry of op.entries) {
+            if (entry.kind === "keep") keptIndices.add(entry.fromIndex);
+          }
+          // Children not kept are about to fall out of the tree —
+          // detach their listeners so the registry doesn't hold dead
+          // bindings.
+          for (let i = 0; i < snapshot.length; i++) {
+            if (!keptIndices.has(i)) detachAllListeners(snapshot[i]!, reg);
+          }
+          const next: Node[] = [];
+          for (const entry of op.entries) {
+            if (entry.kind === "keep") {
+              const child = snapshot[entry.fromIndex];
+              if (!child) continue;
+              const patched = applyPatchToChild(child, entry.patch, reg, state, setFn);
+              next.push(patched ?? child);
+            } else {
+              next.push(createNode(entry.node, reg, state, setFn));
+            }
+          }
+          el.replaceChildren(...next);
+          break;
+        }
       }
     }
   }
@@ -286,7 +358,20 @@ export const makeListener = (
 ): EventListener =>
   (event: Event) => {
     if (binding.set !== undefined && setFn) {
-      const value = binding.value !== undefined ? binding.value : eventInfo(event);
+      let value: unknown;
+      if (binding.value !== undefined) {
+        // Static-value binding (clicks, etc.)
+        value = binding.value;
+      } else if (binding.extract !== undefined) {
+        // Pull a named property off event.target (text input value,
+        // checkbox checked, numeric value, file list, …).
+        const target = event.target as Record<string, unknown> | null;
+        value = target ? target[binding.extract] : undefined;
+      } else {
+        // Fall-back: write the EventInfo record. Useful for generic
+        // dispatchers; rarely what controlled inputs want.
+        value = eventInfo(event);
+      }
       Promise.resolve(setFn(state, binding.set, value)).catch((err) => {
         // eslint-disable-next-line no-console
         console.error(`[plastron-dom] set "${binding.set}" failed:`, err);

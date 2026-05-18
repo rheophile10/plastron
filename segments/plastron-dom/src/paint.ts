@@ -36,6 +36,14 @@ export interface DomRoot {
   element?: Element;
   /** Cel key whose value (a Patch) the channel applies. */
   patchCel: string;
+  /** When true, the rendered root REPLACES the target element entirely
+   *  (rather than becoming its child). The target's `id` / `class` /
+   *  `data-*` attributes merge into the rendered root for any the
+   *  rendered root doesn't already specify. Avoids the silent
+   *  nested-tag footgun when the rendered root's tag matches the
+   *  target's (e.g. `<tbody>` rendered into `<tbody id="tbody">`).
+   *  Default: false. */
+  replaceTarget?: boolean;
 }
 
 export interface PainterRoot extends DomRoot {
@@ -93,7 +101,15 @@ export const createDomChannel = (
       if (isBrowser) {
         const target = resolveTarget(root);
         if (!target) continue;
-        const next = applyPatch(target, mounted.get(rootKey) ?? null, patch, listeners, state, setFn);
+        const next = applyPatch(
+          target,
+          mounted.get(rootKey) ?? null,
+          patch,
+          listeners,
+          state,
+          setFn,
+          root.replaceTarget ?? false,
+        );
         mounted.set(rootKey, next);
       }
       root.onApplied(patch);

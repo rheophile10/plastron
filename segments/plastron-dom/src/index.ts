@@ -8,6 +8,7 @@ import {
   VNODE_SCHEMA_KEY, VNODE_IS_CHANGED_KEY, VNODE_DIFF_KEY, VNODE_BYTELENGTH_KEY,
   type VNode,
 } from "./vnode.js";
+import { cn as cssCn, ensureCssRegistry, disposeCssRegistry, CN_CEL_KEY, type StyleRecord } from "./css.js";
 
 // ========================================================================
 // segment: plastron-dom
@@ -65,20 +66,44 @@ export const plastronDomManifest: SegmentManifest = {
 };
 
 export type {
-  VNode, VText, VElement, AttrValue, EventBinding, EventInfo,
+  VNode, VText, VElement, AttrValue, EventBinding, EventInfo, ClassPart,
 } from "./vnode.js";
 export {
   el, text, vnodeEquals, vnodeByteLength, vnodeSchema,
   VNODE_SCHEMA_KEY, VNODE_IS_CHANGED_KEY, VNODE_DIFF_KEY, VNODE_BYTELENGTH_KEY,
+  // Authoring helpers
+  cx, when, displayValue,
+  // EventBinding builders
+  onClick, onSet,
+  bindValue, bindChecked, bindNumber, bindFiles, inputBind,
 } from "./vnode.js";
+export type { StyleRecord, RuleRecord } from "./css.js";
+export { style, rule, cn, CN_CEL_KEY } from "./css.js";
 export type { Patch, PatchEl, PatchInit, PatchReplace, PatchText, PatchNoop, ChildPatch } from "./diff.js";
 export { diffVNodes, isNoop } from "./diff.js";
 export type { DomRoot, DomChannelHandle } from "./paint.js";
 export { createDomChannel } from "./paint.js";
 
+export interface InstallDomRoot {
+  /** CSS selector used at first paint to locate the mount target. */
+  selector?: string;
+  /** Pre-resolved mount target. Wins over `selector`. */
+  element?: Element;
+  /** Cel key whose value is the vnode tree to paint. */
+  cel: string;
+  /** When true, the rendered root REPLACES the target element entirely
+   *  rather than being inserted as its child. Useful when the rendered
+   *  root's tag matches the target's tag (e.g. `<tbody>` rendered into
+   *  `<tbody id="tbody">` — without replaceTarget you'd get nested
+   *  tbodies). The target's `id` / `class` / `data-*` attributes merge
+   *  into the rendered root for any the rendered root doesn't already
+   *  specify. Default: false. */
+  replaceTarget?: boolean;
+}
+
 export interface InstallDomOptions {
   /** Map from a stable root key (your choice) to mount target + tree cel. */
-  roots: Record<string, { selector?: string; element?: Element; cel: string }>;
+  roots: Record<string, InstallDomRoot>;
   /** Channel key under which to register this painter in
    *  state.channelRegistry. Default 'plastronDom'. Pass distinct keys
    *  if installing multiple painters in the same state. */
@@ -96,6 +121,38 @@ const painterCelKey = (channelKey: string): string =>
   `__plastronDom:painter:${channelKey}`;
 const patchCelKey = (rk: string): string => `__plastronDom:patch:${rk}`;
 const patchFnKey  = (rk: string): string => `__plastronDom:patchFn:${rk}`;
+
+/** Register plastron-dom's schema + schema metadata + the generic
+ *  change-detection lambdas WITHOUT mounting a channel or hydrating any
+ *  cels. Idempotent — safe to call before hydrate so a user segment's
+ *  tree cel that declares `schema: vnodeSchema` gets auto-wired with
+ *  `_isChanged` / `_diffFn` at hydrate time.
+ *
+ *  Typical use:
+ *
+ *    installDomSchemas(state);
+ *    await hydrate(state, [userSegment], [userFns]);   // tree cel auto-wires here
+ *    installDom(state, { roots: { ... } });            // mount the channel later
+ *
+ *  installDom calls this internally too, so a caller who doesn't need
+ *  the pre-hydrate registration can just call installDom and the
+ *  schemas land at mount time (matching the previous behavior). */
+export const installDomSchemas = (state: State): void => {
+  if (state.schemas.has(VNODE_SCHEMA_KEY)) return;
+  state.schemas.set(VNODE_SCHEMA_KEY, vnodeSchema);
+  state.schemaMetadata.set(VNODE_SCHEMA_KEY, {
+    key: VNODE_SCHEMA_KEY,
+    isChanged: VNODE_IS_CHANGED_KEY,
+    diff: VNODE_DIFF_KEY,
+    byteLength: VNODE_BYTELENGTH_KEY,
+  });
+  state.fns.set(VNODE_IS_CHANGED_KEY, (prev: unknown, next: unknown) =>
+    !vnodeEquals(prev as VNode, next as VNode));
+  state.fns.set(VNODE_DIFF_KEY, (prev: unknown, next: unknown) =>
+    diffVNodes(prev as VNode | null, next as VNode));
+  state.fns.set(VNODE_BYTELENGTH_KEY, (v: unknown) =>
+    vnodeByteLength(v as VNode | null | undefined));
+};
 
 /** Install the plastron-dom segment on an existing State. Tree cels
  *  must already be hydrated and must declare `schema: vnodeSchema`.
@@ -134,14 +191,27 @@ export const installDom = (
 
   // Register the schema and metadata directly on state. Schemas don't
   // need to round-trip through JSON for our purposes — the kernel uses
-  // the live ZodType as a Map key.
-  state.schemas.set(VNODE_SCHEMA_KEY, vnodeSchema);
-  state.schemaMetadata.set(VNODE_SCHEMA_KEY, {
-    key: VNODE_SCHEMA_KEY,
-    isChanged: VNODE_IS_CHANGED_KEY,
-    diff: VNODE_DIFF_KEY,
-    byteLength: VNODE_BYTELENGTH_KEY,
-  });
+  // the live ZodType as a Map key. Idempotent — if the caller already
+  // ran `installDomSchemas` pre-hydrate, this is a no-op.
+  installDomSchemas(state);
+
+  // Per-State CSS registry: managed <style> element + interned rules,
+  // so the `cn(state, rules)` helper has somewhere to insert atomic-
+  // CSS classes. Idempotent across multiple installDom calls (only the
+  // first creates the <style> element).
+  const cssCreated = ensureCssRegistry(state);
+
+  // Register the State-bound `cn` as a native-fn cel under
+  // `__plastronDom:cn`. Render lambdas can wire it via inputMap and
+  // call it like a regular function — symmetric to how installDom
+  // registers the per-root patch fns below.
+  if (!state.cels.has(CN_CEL_KEY)) {
+    state.cels.set(CN_CEL_KEY, {
+      key: CN_CEL_KEY,
+      v: (rules: StyleRecord) => cssCn(state, rules),
+      segment: PLASTRON_DOM_SEGMENT,
+    });
+  }
 
   // Stamp each root cel with the live schema. Hydrate's auto-wire loop
   // (re-runs when we hydrate the patch cels below) will then materialize
@@ -197,6 +267,7 @@ export const installDom = (
     const dr: DomRoot = { patchCel: cKey };
     if (root.selector) dr.selector = root.selector;
     if (root.element)  dr.element  = root.element;
+    if (root.replaceTarget) dr.replaceTarget = true;
     painterRoots[rootKey] = {
       ...dr,
       onApplied: () => {
@@ -257,6 +328,13 @@ export const installDom = (
     _dispose: () => {
       channel.dispose();
       state.channelRegistry.delete(channelKey);
+      // CSS teardown: only the install that created the css registry
+      // owns its dispose. If a second installDom (different channelKey)
+      // ran on the same state, `cssCreated` is false here so we leave
+      // the <style> alone — the originally-creating install's _dispose
+      // will tear it down. (Multi-install CSS lifetime is acknowledged
+      // as a v1 limitation; see notes/consolidate-plastron-dom.md.)
+      if (cssCreated) disposeCssRegistry(state);
     },
   };
   state.cels.set(painterCel.key, painterCel);

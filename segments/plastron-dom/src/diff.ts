@@ -19,9 +19,23 @@ import {
 //   text      — same node is text; only the text changed
 //   el        — same tag; sub-changes to attrs, style, events, children
 //
-// Children diff is positional, not keyed. Keyed reconciliation (using a
-// `key?` prop on VElement) is a future change and would emit a different
-// shape of ChildPatch ops.
+// Children diff defaults to positional matching. When BOTH children
+// lists consist entirely of keyed VElements (every child is `type:
+// "el"` with a defined string `key`), the diff switches to keyed
+// reconciliation: it matches children by `key` across renders so a
+// reorder (e.g. row swap, mid-list insertion, removal-from-arbitrary-
+// position) reuses existing DOM nodes instead of regenerating from the
+// changed index onward. Keyed reco emits a `reconcile` ChildPatch op
+// whose entries are either "keep" (reuse an old child at a known
+// `fromIndex`, applying a sub-patch) or "mount" (create a fresh node
+// from a vnode). The apply side rebuilds the parent's children list
+// from those entries. When a keyed reconcile turns out to be all
+// keep-in-place (no reorder, no add, no remove), the diff downgrades
+// to positional patch ops so the cheap path stays cheap.
+//
+// Note: VElement's `key` is UNRELATED to `cel.key` — it's a child-
+// reconciliation hint local to the parent's children list, never seen
+// outside this diff.
 // ========================================================================
 
 export type Patch =
@@ -64,7 +78,24 @@ export type ChildPatch =
   /** Append these new children to the end. */
   | { op: "appendMany"; nodes: VNode[] }
   /** Remove the last `count` children. */
-  | { op: "trim"; count: number };
+  | { op: "trim"; count: number }
+  /** Keyed reconcile — rebuild the parent's children list from
+   *  `entries`. Each entry either reuses an existing child at
+   *  `fromIndex` (with a sub-patch) or mounts a fresh node from a
+   *  vnode. Children whose indices appear in no entry are dropped
+   *  (their listeners detached). Emitted by `diffChildren` only when
+   *  both old and new children lists are entirely keyed VElements
+   *  AND the reconciliation involves a reorder, addition, or removal
+   *  — pure in-place updates downgrade to positional `patch` ops. */
+  | { op: "reconcile"; entries: ReconcileEntry[] };
+
+export type ReconcileEntry =
+  /** Reuse the existing child at `fromIndex` from the parent's
+   *  pre-reconcile children list, applying `patch` (which may be
+   *  noop if the child is unchanged apart from position). */
+  | { kind: "keep"; fromIndex: number; patch: Patch }
+  /** Mount a brand-new node from `node`. */
+  | { kind: "mount"; node: VNode };
 
 const NOOP: PatchNoop = { kind: "noop" };
 
@@ -163,6 +194,22 @@ const diffChildren = (
 ): ChildPatch[] => {
   const oc = a ?? [];
   const nc = b ?? [];
+  if (allKeyedElements(oc) && allKeyedElements(nc)) {
+    return diffChildrenKeyed(oc as VElement[], nc as VElement[]);
+  }
+  return diffChildrenPositional(oc, nc);
+};
+
+const allKeyedElements = (c: VNode[]): boolean => {
+  if (c.length === 0) return false;
+  for (const child of c) {
+    if (child.type !== "el") return false;
+    if (typeof (child as VElement).key !== "string") return false;
+  }
+  return true;
+};
+
+const diffChildrenPositional = (oc: VNode[], nc: VNode[]): ChildPatch[] => {
   const ops: ChildPatch[] = [];
   const min = Math.min(oc.length, nc.length);
 
@@ -176,4 +223,52 @@ const diffChildren = (
     ops.push({ op: "trim", count: oc.length - nc.length });
   }
   return ops;
+};
+
+const diffChildrenKeyed = (oc: VElement[], nc: VElement[]): ChildPatch[] => {
+  // Build old key → {index, node} lookup. Last-write-wins on duplicate
+  // keys; render lambdas that emit duplicate sibling keys are buggy
+  // and this fallback at least stays well-defined.
+  const oldByKey = new Map<string, { index: number; node: VElement }>();
+  for (let i = 0; i < oc.length; i++) {
+    oldByKey.set(oc[i]!.key!, { index: i, node: oc[i]! });
+  }
+
+  const entries: ReconcileEntry[] = [];
+  for (let i = 0; i < nc.length; i++) {
+    const newChild = nc[i]!;
+    const match = oldByKey.get(newChild.key!);
+    if (match) {
+      const subPatch = diffVNodes(match.node, newChild);
+      entries.push({ kind: "keep", fromIndex: match.index, patch: subPatch });
+      oldByKey.delete(newChild.key!);
+    } else {
+      entries.push({ kind: "mount", node: newChild });
+    }
+  }
+
+  // Downgrade pure in-place updates (no reorder, no add, no remove) to
+  // positional patch ops so the cheap path stays cheap. "In place" here
+  // means: every entry is "keep" with fromIndex equal to its position,
+  // and the lengths match.
+  let inPlace = entries.length === oc.length;
+  if (inPlace) {
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i]!;
+      if (e.kind !== "keep" || e.fromIndex !== i) {
+        inPlace = false;
+        break;
+      }
+    }
+  }
+  if (inPlace) {
+    const ops: ChildPatch[] = [];
+    for (let i = 0; i < entries.length; i++) {
+      const e = entries[i] as { kind: "keep"; fromIndex: number; patch: Patch };
+      if (e.patch.kind !== "noop") ops.push({ op: "patch", index: i, patch: e.patch });
+    }
+    return ops;
+  }
+
+  return [{ op: "reconcile", entries }];
 };
