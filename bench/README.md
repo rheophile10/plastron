@@ -7,13 +7,70 @@ Replaces estimates in `notes/plastron-vs-excel.md` (gitignored — local working
 ```sh
 cd bench
 npm install
-npm run cascade        # cascade time vs graph shape × size
+npm run cascade        # cascade time vs graph shape × size (in-process)
 npm run memory         # per-cel heap cost — best with --expose-gc:
 node --expose-gc --import tsx src/memory-per-cel.ts
-npm run all            # everything
+npm run all            # cascade + memory
+
+# Multi-bench runner (spawns each bench as its own subprocess, captures
+# external /usr/bin/time + /proc poll + internal resourceUsage + GC):
+npm run bench                          # all families × both variants
+npm run bench -- --filter amort        # families matching substring
+npm run bench -- --only plastron       # skip react variants
+npm run bench -- --cpu-prof            # also drop .cpuprofile per child
+npm run bench -- --heap-snapshot       # also dump heap snapshot at peak
+npm run bench -- --perf-stat           # wrap each child in `perf stat`
+npm run bench -- --flamegraph          # wrap each child in 0x (must be installed)
 ```
 
 Each run writes structured JSON to `bench/results/`. Results are gitignored — they're per-machine.
+
+## Bench families (`npm run bench`)
+
+Pairs of `.plastron.ts` + `.react.ts` scripts under `src/benches/`. The parent
+runner (`src/runner.ts`) discovers them via `src/manifest.ts`, spawns each as
+its own `node --expose-gc --import tsx <script>` subprocess, and merges
+external + internal profiling views into a comparison table.
+
+| Family | What it stresses |
+|---|---|
+| `amortization` | Deep dependency chain (N-month sheet driven by rate/principal/term) — cascade propagation along a long chain plus fan-in aggregate. |
+| `life` | Conway's Life on N×N toroidal grid — uniform fan-in-8 throughput; reports generations/sec. |
+| `cellx` | Synthetic layered graph (1000-wide × 5 deep, fanIn 4) — canonical signal-lib microbenchmark. |
+
+### Profiling stack
+
+Each subprocess is layered (outermost → innermost):
+
+1. `/usr/bin/time -v` — authoritative wall, user/sys CPU, peak RSS, page faults, context switches.
+2. *(opt)* `perf stat -d -d -d` — HW counters (cycles, IPC, cache misses).
+3. *(opt)* `0x` — interactive flame graph.
+4. `node --expose-gc [--cpu-prof] [--heap-prof] --import tsx <script>`.
+5. Inside the child, `src/profile.ts` captures: `process.resourceUsage()` snapshots, `v8.getHeapStatistics()` + per-space, `PerformanceObserver` GC events (count / total pause / max pause / by kind), periodic `process.memoryUsage()` samples, and per-iteration timing percentiles from `src/harness.ts`.
+6. In parallel from the parent, `/proc/<descendant-pid>/status` polled every `--poll-ms` (default 50) for a VmRSS / VmHWM / VmPeak time series.
+
+### Tuning bench parameters
+
+A single `src/benches/params.ts` module holds sizes / iteration counts /
+workload constants per family, with `shared` / `plastron` / `react` blocks
+so each variant can scale to what's realistic for it.
+
+Override at runtime without editing the file via env vars:
+
+```sh
+BENCH_PARAMS_OVERRIDE_AMORTIZATION='{"react":{"sizes":[20,50],"iterations":30}}' \
+  npm run bench -- --filter amort
+```
+
+Scalar `iterations` / `warmup` overrides are auto-wrapped to constant
+functions. Anything else shallow-merges into the variant block.
+
+### Adding a new bench family
+
+1. Write `src/benches/<name>.plastron.ts` and `src/benches/<name>.react.ts`. Each ends by emitting one `__BENCH_JSON__<json>` line on stdout via `profile.emit(report)`.
+2. Add a `<name>` block to `src/benches/params.ts`.
+3. Append an entry to `MANIFEST` in `src/manifest.ts`.
+4. `npm run bench` picks it up automatically.
 
 ## Knobs
 
