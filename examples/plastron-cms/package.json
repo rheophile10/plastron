@@ -3,7 +3,7 @@
   "private": true,
   "type": "module",
   "version": "0.0.1",
-  "description": "Example CMS app — articles as plastron States stored in SQLite, edited via plastron-sheet, rendered as pages (plastron-dom) or newsletters (plastron-mjml). Demonstrates the full segment composition.",
+  "description": "Example CMS app — WordPress-style content table backed by PGLite (Postgres-in-wasm) in the browser. PlastronCMS is a React component (editMode + content + onSave) that hydrates a plastron cel graph for view and edit. The PGLite layer sits behind an API-shaped boundary so the component code is byte-identical to the eventual grafted-into-a-real-React-app deployment.",
   "scripts": {
     "dev": "vite",
     "build": "tsc && vite build",
@@ -12,9 +12,7 @@
   "dependencies": {
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
-    "@sqlite.org/sqlite-wasm": "^3.53.0-build1",
-    "mjml-browser": "^4.15.0",
-    "zod": "^4.3.6"
+    "@electric-sql/pglite": "^0.2.0"
   },
   "devDependencies": {
     "@types/react": "^19.0.0",
