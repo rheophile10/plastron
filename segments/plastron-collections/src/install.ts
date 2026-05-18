@@ -47,6 +47,7 @@ export const plastronCollectionsManifest: SegmentManifest = {
       ...opFns.map(([k]) => k),
     ],
     tags: [BUFFER_TAG_KEY],
+    slotAccessors: [BUFFER_TAG_KEY],
     celSegments: [PLASTRON_COLLECTIONS_SEGMENT],
   },
 };
@@ -175,4 +176,42 @@ export const installCollections = (state: State): void => {
     }],
     [fns],
   );
+};
+
+// ========================================================================
+// flushCollections — counterpart to installCollections.
+//
+// This is a B2 segment (no channels, no managed cels of its own), so
+// the kernel's `flush(state, segmentKey)` only drops the manifest
+// entry — it walks `cels` and `segments`, not `provides`. To recycle
+// the segment between demo data sets (or to fully unload it from a
+// long-running host), we need a helper that unregisters every entry
+// the install put into shared kernel registries.
+//
+// Locked fns are skipped (host or another segment may have claimed
+// them). Calling order: flush() first so the manifest is gone before
+// the lambdas it points at are removed.
+// ========================================================================
+
+export const flushCollections = async (state: State): Promise<void> => {
+  const flush = state.fns.get("flush") as Fn;
+  await flush(state, PLASTRON_COLLECTIONS_SEGMENT);
+
+  const provides = plastronCollectionsManifest.provides!;
+
+  for (const k of provides.schemas ?? []) {
+    state.schemas.delete(k);
+    state.schemaMetadata.delete(k);
+  }
+  for (const k of provides.lambdas ?? []) {
+    if (state.fnMetadata.get(k)?.locked) continue;
+    state.fns.delete(k);
+    state.fnMetadata.delete(k);
+  }
+  for (const k of provides.tags ?? []) {
+    state.tagRegistry.delete(k);
+  }
+  for (const k of provides.slotAccessors ?? []) {
+    state.slotAccessors.delete(k);
+  }
 };

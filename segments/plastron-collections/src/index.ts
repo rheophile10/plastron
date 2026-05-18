@@ -64,5 +64,6 @@ export {
 
 // Install + manifest.
 export {
-  PLASTRON_COLLECTIONS_SEGMENT, installCollections, plastronCollectionsManifest,
+  PLASTRON_COLLECTIONS_SEGMENT,
+  flushCollections, installCollections, plastronCollectionsManifest,
 } from "./install.js";

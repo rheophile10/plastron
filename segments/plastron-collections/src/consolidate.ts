@@ -49,10 +49,10 @@
 //   estimate" so the contrast is visible.
 // ========================================================================
 
-import type {
-  CelTriple, Fn, Key, State,
+import {
+  precompute,
+  type CelTriple, type Fn, type Key, type State,
 } from "../../../plastron/src/index.js";
-import { precompute } from "../../../plastron/src/core/precompute.js";
 import { columnFrom } from "./builders.js";
 import { COLUMN_SCHEMA_KEY, BUFFER_TAG_KEY } from "./schemas.js";
 import type { Column, Dtype } from "./types.js";
@@ -203,28 +203,30 @@ export const expandRefs = async (
     writes[cel.key] = { v: resolved, ref: null };
   }
 
-  // Phase 2: drop the source cel from state.cels FIRST. This is safe
-  //          because Phase 1 already captured every ref's resolved
-  //          value into `writes`, and the next setCelBatch call
-  //          will rebuild the topology indexes from scratch (cel.ref
-  //          changes set topoChanged=true, which makes setCelBatch
-  //          re-run precompute). Without an existing source cel,
-  //          buildChildren naturally drops the source → ref edges.
-  state.cels.delete(sourceKey);
-
-  // Phase 3: setCelBatch each ref → scalar. ref-clearing triples set
-  //          topoChanged=true, so precompute re-runs once at the end
-  //          of the batch with the source cel already gone.
+  // Phase 2: rewrite each ref → scalar BEFORE dropping the source.
+  //          ref: null in the triple clears cel.ref atomically inside
+  //          applyTripleAtomic, so by the time setCelBatch returns no
+  //          live cel points at sourceKey. Doing this before the
+  //          delete closes the window where a re-entry (channel
+  //          commit, _dispose lambda, dynamic cel firing) could
+  //          resolve a ref against a now-missing source and read
+  //          undefined.
   if (refKeys.length > 0) {
     const setCelBatch = state.fns.get("setCelBatch") as Fn;
     await setCelBatch(state, writes);
-  } else {
-    // No refs to clear — but we still removed the source. Use a
-    // runCycle to re-walk; the next set/setCelBatch will trigger
-    // precompute via topoChanged on the next change.
-    const runCycle = state.fns.get("runCycle") as Fn;
-    await runCycle(state);
   }
+
+  // Phase 3: drop the source cel. No live refs point at it now.
+  state.cels.delete(sourceKey);
+
+  // Phase 4: re-prime topology. A raw cels.delete doesn't dirty
+  //          precomputeGeneration, so we force the rebuild — same
+  //          shape as dropRef/dropAllRefsTo. The runCycle that
+  //          follows fires any newly affected cels (e.g. dynamic
+  //          cels that observed the source).
+  precompute(state);
+  const runCycle = state.fns.get("runCycle") as Fn;
+  await runCycle(state);
 };
 
 // ========================================================================
