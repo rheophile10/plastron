@@ -313,12 +313,6 @@ Sync side effects (`flush`, `set`, `touch`) are safe to call from lambdas (they'
 
 ---
 
-## Strict-type validation (optional)
-
-`config_recalculation.v.strictTypes = true` validates every lambda's inputs + outputs against the schema keys in its `LambdaMetadata`. Failures land in the reserved `errors` cel; the cycle continues.
-
----
-
 ## Pitfalls
 
 ### Performance cliffs
