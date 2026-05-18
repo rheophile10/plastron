@@ -137,6 +137,15 @@ Cel keys used as formula symbols must be valid bare atoms (no spaces, parens, or
 ```
 Holds no `v` of its own; reads resolve through the source's `SlotAccessor`. Mutually exclusive with `f`/`l`. See `plastron/src/core/refs.ts`.
 
+#### SlotAccessor.write contract
+
+`SlotAccessor.write(src, slot, value)` returns the new source value, and the kernel branches on **reference identity** with the old source:
+
+- **Returned `=== src` (in-place + gen-bump path).** The kernel skips reinstalling the source value and fires the cascade from the source key directly. The accessor MUST mutate `src` in place AND bump a generation counter the source's `isChanged` lambda keys on — otherwise the kernel's reference-equality short-circuit suppresses the cascade. This is the typed-array path used for `plastron-collections` `Column` / `Matrix` (`segments/plastron-collections/src/refs.ts:82-96`).
+- **Returned a new object (wholesale-replace path).** The kernel re-enters `writeOne` on the source key with the returned value, replacing the cel's `v` entirely. Use this when in-place mutation isn't an option (immutable inputs, structural rewrites like Table's `{...src, columns: {...}}`).
+
+**Trap:** an accessor that shallow-clones (`return {...src}`) AND bumps `gen` on the clone defeats both paths — the kernel sees a new reference (replace path), reinstalls it, and the gen bump is wasted. Pick one path and commit to it.
+
 ### Wave / dynamic / channel attributes
 - `wave: 1` — cel runs after every `wave: 0` cel in the same cascade finishes. Useful for aggregators.
 - `dynamic: true` — cel fires in every cascade regardless of input changes. Clocks, counters.
