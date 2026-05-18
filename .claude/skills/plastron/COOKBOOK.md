@@ -34,7 +34,7 @@ await handle.channel.drain();     // flush sync
 
 `precomputeOptional` is async — it builds per-cel `_evaluate` closures that read deps via inline property access. Without it, every fire walks the AST against resolved cels. Always call once after `runCycle`.
 
-Reference: `examples/plastron-sheet/src/main.ts:19-29`, `examples/plastron-spa-demo/src/main.ts:20-54`, `notes/plastron-authoring-lessons.md`.
+Reference: `examples/plastron-sheet/src/main.ts:19-29`, `examples/plastron-spa-demo/src/main.ts:20-54`.
 
 ---
 
@@ -100,7 +100,7 @@ Measured (`bench/RESULTS.md`):
 
 **When NOT to use:** if the user can edit individual `balance_i` values mid-flow, the per-cel form is right (each cell is independently writable + observable). The shape of the cels follows the shape of the *observation contract*, not the shape of the math.
 
-See **DESIGN.md** "First design rule: cels mark reactivity boundaries" for the full criteria. Reference: `bench/src/benches/cellx.plastron-onecel.ts`, `notes/plastron-design-lessons.md`.
+See **DESIGN.md** "First design rule: cels mark reactivity boundaries" for the full criteria. Reference: `bench/src/benches/cellx.plastron-onecel.ts`.
 
 ---
 
@@ -194,7 +194,7 @@ Why this over a lambda cel:
 
 Use a lambda cel (`l:` + `fnMetaData`) when the same function is shared across many cels and you want one registered metadata record. Use a native-fn cel when it's one-off, domain-specific, or you want the function to be data.
 
-Reference: `bench/src/benches/life.plastron.ts`, `notes/plastron-authoring-lessons.md` ("The big ones" §2).
+Reference: `bench/src/benches/life.plastron.ts`.
 
 ---
 

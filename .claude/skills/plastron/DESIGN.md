@@ -89,7 +89,7 @@ The cellx benchmark, expressed three ways at the same workload (width=1000, 5000
 
 The 3.4× gap between the two plastron variants is **pure cels-for-cels'-sake overhead** — same inner compute, different cel topology. The one-cel plastron beats react-memo because plastron's one-cel cascade has less ceremony than React's render commit + `act()` flush + effect schedule.
 
-Full discussion: `bench/RESULTS.md` and `notes/plastron-design-lessons.md`.
+Full discussion: `bench/RESULTS.md`.
 
 ### Plastron-first, but reactivity-purposefully
 

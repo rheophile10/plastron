@@ -19,7 +19,6 @@ Detailed guidance:
 
 The skill files and this CLAUDE.md were synthesized from a specific snapshot of the code and a specific set of bench results. They will drift. **Before relying on any specific claim** (a perf number, a "use X for Y" rule, an API shape, a sharp-edge warning), do a fast sanity-check against the current source of truth:
 
-- `notes/plastron-*-lessons.md` — first-hand authoring + design lessons. Newer than the skill files when in conflict.
 - `bench/RESULTS.md` — current benchmark numbers and framing.
 - Recent `git log` on `plastron/src/` and `segments/` — API may have moved.
 
@@ -50,7 +49,7 @@ State field is `state.cels` (lowercase). Channels register in `state.channelRegi
 
 ## Performance defaults
 
-These are the rules from the bench-build lessons (`notes/plastron-authoring-lessons.md`, `notes/plastron-design-lessons.md`). Treat as non-negotiable unless you've measured otherwise:
+These are the rules from the bench-build lessons. Treat as non-negotiable unless you've measured otherwise:
 
 0. **Cels mark reactivity boundaries.** Don't make something a cel unless reactivity buys something. Inner compute belongs in native fns. Amortization N=1000: 26× speedup from this one design choice. (See DESIGN.md "First design rule.")
 1. **`batch` over `set`-in-a-loop.** Every `set` is a full cascade. Game of Life measured 14× from this one change.
@@ -79,7 +78,7 @@ The reference shape for a channel-owning segment is `segments/plastron-dom/src/i
 
 ## Sibling repos
 
-- `~/projects/xit-wasm-ts` — the content-addressed wasm store that plastron-archive sits on top of. Browser-build details are documented in `notes/tasks/task-plastron-archive-file-ops.md` (uncommitted patches on `xit-wasm-ts/main` make the browser path work).
+- `~/projects/xit-wasm-ts` — the content-addressed wasm store that plastron-archive sits on top of. Uncommitted patches on `xit-wasm-ts/main` make the browser path work: removed the top-level `import * as fs from "node:fs/promises"` and replaced it with a runtime-built dynamic specifier (`/* @vite-ignore */`) so Vite doesn't try to bundle `node:fs/promises` into browser builds. Until those patches land, plastron-cms's browser build needs the local checkout.
 
 ## What this repo is NOT
 

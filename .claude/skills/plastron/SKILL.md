@@ -50,7 +50,7 @@ await batch(state, [["qty", 4], ["price", 12]]);    // many writes, ONE cascade
 console.log(get(state, "total"));                   // sync read
 ```
 
-**Use `batch` whenever there are multiple writes per tick.** Sequential `set` calls run a full cascade per call — N writes = N cascades. `batch` dedups firedKeys and runs one cascade for the union. The Game of Life bench measured a **14× speedup** from this change alone (see `bench/RESULTS.md` and `notes/plastron-authoring-lessons.md`).
+**Use `batch` whenever there are multiple writes per tick.** Sequential `set` calls run a full cascade per call — N writes = N cascades. `batch` dedups firedKeys and runs one cascade for the union. The Game of Life bench measured a **14× speedup** from this change alone (see `bench/RESULTS.md`).
 
 **Call `precomputeOptional(state)` after `runCycle`** to enable per-cel codegen closures (`_evaluate`). Without it every fire goes through the AST-walk slow path — ~10× slower on cascade-shape workloads.
 
@@ -353,7 +353,6 @@ Sync side effects (`flush`, `set`, `touch`) are safe to call from lambdas (they'
 - `segments/plastron-archive/src/` — `.甲` round-trip
 - `examples/plastron-spa-demo/` — reference shape for a plastron-first app
 - `bench/RESULTS.md` — benchmark numbers and "what this is / isn't" framing
-- `notes/plastron-authoring-lessons.md` — first-hand authoring notes (source for these pitfalls)
 
 For "how do I scope this project?" → **DESIGN.md**.
 For "how do I do X?" → **COOKBOOK.md**.
