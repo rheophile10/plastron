@@ -1,8 +1,11 @@
 import { Archive } from "xit-wasm";
+import { parse as yamlParse } from "yaml";
 import type { Segment } from "../../../plastron/src/index.js";
 import {
+  DEFAULT_SEGMENT_FORMAT,
   MANIFEST_PATH, SEGMENTS_DIR,
   type ArchiveManifest,
+  type SegmentFormat,
 } from "./manifest.js";
 
 export interface ImportResult {
@@ -42,15 +45,22 @@ export const importArchive = async (bytes: Uint8Array): Promise<ImportResult> =>
     throw new Error(`Archive manifest is missing the "segments" array.`);
   }
 
+  // Legacy archives (format v1 pre-yaml-flag) have no segmentFormat
+  // field; the on-disk files are `.json`. Anything newer carries an
+  // explicit marker.
+  const format: SegmentFormat = manifest.segmentFormat ?? DEFAULT_SEGMENT_FORMAT;
+  const parseSegment = (text: string): Segment =>
+    (format === "yaml" ? yamlParse(text) : JSON.parse(text)) as Segment;
+
   const segments: Segment[] = [];
   for (const key of manifest.segments) {
-    const path = `${SEGMENTS_DIR}/${key}.json`;
+    const path = `${SEGMENTS_DIR}/${key}.${format}`;
     const segBytes = await archive.read(path);
     if (!segBytes) {
       await archive.close();
       throw new Error(`Archive manifest lists segment ${JSON.stringify(key)} but ${path} is missing.`);
     }
-    segments.push(JSON.parse(dec.decode(segBytes)) as Segment);
+    segments.push(parseSegment(dec.decode(segBytes)));
   }
 
   return { manifest, segments, archive };

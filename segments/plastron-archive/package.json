@@ -10,7 +10,8 @@
   },
   "dependencies": {
     "fflate": "^0.8.2",
-    "xit-wasm": "file:../../../xit-wasm-ts"
+    "xit-wasm": "^0.1.0",
+    "yaml": "^2.6.0"
   },
   "devDependencies": {
     "typescript": "~5.9.3"

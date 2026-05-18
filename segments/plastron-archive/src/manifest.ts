@@ -23,11 +23,25 @@ export const MANIFEST_PATH = "manifest.json" as const;
 /** Directory under which per-segment JSON files live. */
 export const SEGMENTS_DIR = "segments" as const;
 
+/** On-disk serialization for the per-segment files. The manifest itself
+ *  is always JSON — it's a small, machine-shaped table of contents.
+ *  Segment payloads are the bulky human-edited surface, and YAML is the
+ *  cleaner choice when cels hold multi-line strings (e.g. Python source
+ *  on a LambdaMetadata) that you want to diff line-by-line in git. */
+export type SegmentFormat = "json" | "yaml";
+
+/** Default segment format. Stays "json" to match the historical archive
+ *  shape — callers opt into "yaml" explicitly via ExportOptions.format. */
+export const DEFAULT_SEGMENT_FORMAT: SegmentFormat = "json";
+
 export interface ArchiveManifest {
   version: typeof ARCHIVE_FORMAT_VERSION;
   format: typeof ARCHIVE_MIME;
   /** ISO-8601 timestamp at export. */
   createdAt: string;
+  /** Per-segment file format. Absent in legacy archives — readers
+   *  treat the absence as "json". */
+  segmentFormat?: SegmentFormat;
   /** Segment keys, in the order they should be hydrated. The loader
    *  uses this both to find the per-segment files and to preserve
    *  hydrate order. */

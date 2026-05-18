@@ -78,7 +78,7 @@ The reference shape for a channel-owning segment is `segments/plastron-dom/src/i
 
 ## Sibling repos
 
-- `~/projects/xit-wasm-ts` — the content-addressed wasm store that plastron-archive sits on top of. Uncommitted patches on `xit-wasm-ts/main` make the browser path work: removed the top-level `import * as fs from "node:fs/promises"` and replaced it with a runtime-built dynamic specifier (`/* @vite-ignore */`) so Vite doesn't try to bundle `node:fs/promises` into browser builds. Until those patches land, plastron-cms's browser build needs the local checkout.
+- `xit-wasm` — content-addressed wasm store that plastron-archive sits on top of. Published to npm at `^0.1.0`; source at `github:rheophile10/xit-wasm-ts`. The browser-fix patch (dynamic `/* @vite-ignore */` specifier instead of a top-level `import * as fs from "node:fs/promises"`) shipped in 0.1.0, so Vite browser builds work out of the box. No local sibling checkout required.
 
 ## What this repo is NOT
 
