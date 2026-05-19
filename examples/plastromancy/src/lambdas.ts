@@ -95,9 +95,11 @@ const vnodeDiff: Fn = (prev: unknown, next: unknown) =>
 // ─── dispatchers (button clicks) ───────────────────────────────────────────
 
 const adjust = async (state: State, key: string, delta: number, min = 1): Promise<void> => {
-  const cur = (state.cels.get(key)?.v as number | undefined) ?? min;
-  const set = state.fns.get("set") as Fn;
-  await set(state, key, Math.max(min, cur + delta));
+  const update = state.fns.get("update") as Fn;
+  await update(state, key, (cur: unknown) => {
+    const n = (cur as number | undefined) ?? min;
+    return Math.max(min, n + delta);
+  });
 };
 
 const hotter:    Fn = async (...args: unknown[]) => { await adjust(args[0] as State, "heat",      +1); };
@@ -107,10 +109,12 @@ const thinner:   Fn = async (...args: unknown[]) => { await adjust(args[0] as St
 
 const nextCharge: Fn = async (...args: unknown[]) => {
   const state = args[0] as State;
-  const cur = (state.cels.get("charge")?.v as string | undefined) ?? CHARGES[0];
-  const i = CHARGES.indexOf(cur as typeof CHARGES[number]);
-  const next = CHARGES[(i + 1) % CHARGES.length];
-  await (state.fns.get("set") as Fn)(state, "charge", next);
+  const update = state.fns.get("update") as Fn;
+  await update(state, "charge", (cur: unknown) => {
+    const c = (cur as string | undefined) ?? CHARGES[0];
+    const i = CHARGES.indexOf(c as typeof CHARGES[number]);
+    return CHARGES[(i + 1) % CHARGES.length];
+  });
 };
 
 export const chiselFns: Map<LambdaKey, Fn> = new Map([

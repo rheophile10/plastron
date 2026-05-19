@@ -1,99 +1,141 @@
-# plastromancy — the showcase ritual
+# plastromancy — divination as a reactive plastron app
 
-A Shang-era divination ritual that exercises every plastron architectural feature in one running script. Use it as a tour of the runtime — and as proof that custom facades sit cleanly on top of the kernel. The 龜卜藏 face that drives this example lives in `src/mask/`, not in plastron core.
+A Shang-era bone-cracking divination, modelled as a plastron app. Five
+files of TypeScript, one HTML shell, one CSS file — the whole rite is
+six cels and a render lambda.
+
+The example exists for two reasons:
+
+1. As a **tour of plastron's load-bearing pieces** in something more
+   visual than a unit test: schema-driven change detection, a custom
+   "kind" of lambda compiled from JSON-shaped declarative metadata,
+   S-expression formulas, vnode rendering through `plastron-dom`, and
+   the canonical boot sequence.
+2. As **the reference shape for "kind handlers"** — the pattern a
+   sibling segment like `plastron-python` will copy when it wants to
+   register a non-default lambda compiler. The augur's role here is the
+   same role `installEshkol` plays in `plastron-eshkol`.
+
+The Chinese-named glyphs in inline comments are the rite's vocabulary,
+not a public API. Comments label which plastron primitive each rite
+piece maps to.
 
 ```bash
-cd plastron && npm run build
-cd ../examples/plastromancy && npx tsx src/index.ts
+cd examples/plastromancy
+npm install
+npm run dev          # → http://localhost:5173/
+# or
+npm run build && npm run preview
 ```
 
-## What it shows
+## File layout
 
-Each phase of the ritual maps to a plastron feature:
+```
+examples/plastromancy/
+├── index.html        — Vite shell with a single <div id="root"> mount point.
+├── src/
+│   ├── main.ts       — boot: createInitialState → installShellEnvironment
+│   │                   → hydrate(rules + session) → runCycle → installDom
+│   │                   → handle.channel.drain() to force a synchronous first paint.
+│   ├── schemas.ts    — the `crack` schema (pattern + intensity). The schema's
+│   │                   isChanged ignores intensity drift — downstream cels
+│   │                   (omen, tree) skip re-firing on noise.
+│   ├── kind.ts       — the `augur` compiler. A LambdaMetadata with
+│   │                   kind: "augur" + source: <json rule book> is compiled
+│   │                   at hydrate into a Fn that reads inputs.crack.pattern
+│   │                   and returns the omen text.
+│   ├── segments.ts   — two segments: `rules` (the augur's rule book,
+│   │                   no cels — just fnMetaData) and `session` (six
+│   │                   cels: heat / thickness / charge / ratio / crack /
+│   │                   omen / appTree).
+│   └── lambdas.ts    — five lambdas: vnodeIsChanged, vnodeDiff,
+│                       crackIsChanged, buildCrack, buildTree;
+│                       four button dispatchers (hotter / cooler /
+│                       thicker / thinner / nextCharge).
+└── styles.css        — visual styling for the chiseled-bone look.
+```
 
-| Ritual phase | Plastromancy symbol | Plastron primitive |
+## What's in the graph
+
+Six session cels plus a global appTree:
+
+| Cel | Role | Notes |
 |---|---|---|
-| Loading three bundles | 增卷 | `SegmentBundle` + `hydrateBundles` |
-| The temple-signed catalog | 印 on a 卷 | `SegmentManifest` + `verifySegment` |
-| Carving the bone (heat → crack) | the chisels | Native lambdas + the formula DSL |
-| The augur reads the omen | 體 (augur) | Custom `LambdaKindHandler` reading a JSON rule book |
-| The crack with a pattern | 紋 (crack) | Format-tagged value with per-tag comparator |
-| Pattern-equal cracks suppress re-render | the comparator | `TagProtocol.comparator` returning `true` |
-| Provenance on each charge | the augur's hand | `authoredBy` / `generatedAt` on cels |
-| Audit log of every divination | 觀 | Hook subscriptions on `afterLambdaInvoke`, `afterCycle`, `afterHydrate` |
-| Change-indices snapshot | the watcher's tally | Default segment subscribed to `afterWave` |
-| Runtime fingerprint at the close | 印鑑 | `state.fingerprint()` |
-| Burning the bones | 焚 | `state.flush()` + tag `release` hooks |
-| The Chinese-named API throughout | 龜卜藏 | The local mask (`src/mask/`) wrapping `State` |
+| `heat` | value cel | User-writable. Buttons dispatch `session:hotter` / `session:cooler`. |
+| `thickness` | value cel | Same shape as heat. |
+| `charge` | value cel | The augur's question. `session:nextCharge` rotates through a list. |
+| `ratio` | formula cel | `(/ heat thickness)` — the kernel's S-expression compiler. |
+| `crack` | lambda cel | `l: "buildCrack"` over `ratio`. Emits `{pattern, intensity}`. `schema: crackSchema` — change-suppressed when only intensity drifts. |
+| `omen` | lambda cel | `l: "augur"` — the kind handler reads the rule book. |
+| `appTree` | lambda cel | `l: "buildTree"` over everything. `schema: vnodeSchema` — plastron-dom paints from it. |
 
-## Layout
+The diff between `omen` and the tree is intentionally not interesting
+to look at — it's a single string interpolated into one `<div>`. The
+interesting bit is that the tree only re-fires when something
+non-trivial moves: bump heat by one, ratio recomputes, crack might
+change pattern or not, omen and tree only re-fire if the pattern moved.
+That's `crackIsChanged` doing its job in the cascade.
 
+## Plastron features demonstrated
+
+| Feature | Where to look |
+|---|---|
+| Canonical boot sequence | `main.ts:45-60` |
+| Multi-segment hydrate (rules + session) | `main.ts:51` |
+| Custom lambda kind ("augur") | `kind.ts:22-30`, registered at `main.ts:42`, declared at `segments.ts:21-29` |
+| S-expression formula compiler | `segments.ts:38` (`f: "(/ heat thickness)"`) |
+| Schema-driven `isChanged` suppression | `schemas.ts` + `main.ts:37-41` + `lambdas.ts:80-85` |
+| Vnode schema + diff wiring | `main.ts:31-36` registers `vnodeSchema` / `VNODE_DIFF_KEY` from `plastron-dom` |
+| Event handlers as dispatchers (host writes inputs, segment owns rendering) | `lambdas.ts:97-114` — every handler is one `update` or `set` call, no value computation in the handler |
+| `installDom` with a channel-bound tree cel | `main.ts:54-56` |
+| Force synchronous first paint | `main.ts:60` (`handle.channel.drain()`) |
+
+## The kind handler, in detail
+
+A "kind handler" is a Compiler registered in `state.fns` under a name
+(here, `"augur"`). At hydrate time, the kernel encounters a lambda whose
+`fnMetaData[name].kind === "augur"` and looks up `state.fns.get("augur")`
+to compile it. The compiler receives the lambda's `source` string and
+returns a runtime `Fn`. From the cascade's perspective, the resulting
+Fn is indistinguishable from a hand-written lambda — except the source
+of truth was a JSON document, not code.
+
+This is the same pattern `plastron-eshkol` uses to install a Scheme
+compiler (`installEshkol` registers `state.fns.set("eshkol", compiler)`),
+and the same pattern a future `plastron-python` will use for Pyodide.
+
+```ts
+// segments.ts — declarative rule book
+{
+  augur: {
+    key: "augur",
+    kind: "augur",
+    source: JSON.stringify({
+      X: "凶 — calamity, hold the spear",
+      Y: "吉 — auspicious, ride at dawn",
+    }),
+  },
+}
+
+// kind.ts — compiler that turns the source into a runtime Fn
+export const augurCompiler: Compiler = (source: string) => {
+  const rules = JSON.parse(source ?? "{}") as Record<string, string>;
+  return (inputs) => rules[inputs.crack?.pattern] ?? "(no omen for ...)";
+};
 ```
-src/
-  mask/                  — the 龜卜藏 facade. Lives here, not in plastron core.
-    types.ts             — 龜卜藏 / 貞 / 卷 / 印 / 體 / 紋 / 卜
-    wrap.ts              — wrap(state) → 龜卜藏
-    index.ts             — 龜刻卜 (and 龜刻卜.卷 for bundle-shaped hydration)
-  bundles/
-    session.ts           — writeable session segment (cels + augur lambda)
-    ancestors.ts         — read-only catalog, signed by the temple
-    rules.ts             — divination rule book exposed as a module cel
-  kinds/
-    augur.ts             — custom LambdaKindHandler reading rule books
-  tags/
-    crack.ts             — TagProtocol with pattern-equality comparator
-  lambdas/
-    chisels.ts           — native plastron Fns + their LambdaMetadata
-  index.ts               — orchestrator
-```
 
-## The mask, in detail
+No code is shipped; only the rules. Swap the rule book by writing a
+new segment with different `fnMetaData[augur].source` — the augur reads
+it transparently.
 
-`src/mask/` is a self-contained TypeScript module that wraps a plastron `State` as a `龜卜藏`. Methods on the facade:
+## Why this example matters
 
-| Method | Plastron equivalent | Description |
-|---|---|---|
-| `骨` | `state.Cels` | the cels Map |
-| `焚(segmentKey)` | `state.flush` | burn a segment |
-| `增(cels, lambdas, fns, options)` | `state.hydrate` | incremental hydrate |
-| `增卷(bundles, fns, options)` | `hydrateBundles(bundles, ..., state, ...)` | bundle-shaped hydrate |
-| `觀(subscription)` | append to `state._hooks` | register a hook subscriber |
-| `印鑑()` | `state.fingerprint()` | runtime fingerprint |
-| `印鑑分解()` | `state.fingerprintComponents()` | structured fingerprint inputs |
-| `辛(cascade)` | `state.cycle(cascade)` | run one cycle |
-| `貞.察(key)` | `state.input.get` | inspect |
-| `貞.刻(key, v)` | `state.input.set` | carve |
-| `貞.連刻(writes)` | `state.input.batch` | carve many |
-| `貞.重(key)` | `state.input.touch` | recharge |
-| `貞.施()` | `state.input.consume` | consume buffered writes |
-| `__state` | `State` | escape hatch when the facade is too narrow |
+Every architectural decision in plastron should compose. The
+plastromancy example exercises segments + kind handlers + schemas +
+formula + lambda cels + vnode rendering in one running app. If a
+future kernel change breaks it, the design test has failed; if it
+still renders the same omens, the architecture has held.
 
-Type aliases: `卷 = SegmentBundle`, `印 = SegmentManifest`, `體 = LambdaKindHandler`, `紋 = TagProtocol`, `卜 = WavedCascade`.
-
-## Glyph dictionary (after the README at repo root)
-
-- 卜 — the cascade
-- 辛 — the chisel; the cycle-runner
-- 貞 — the augur's IO surface (`察 / 刻 / 連刻 / 重 / 施`)
-- 骨 — the cels Map
-- 甲 — the shell substrate
-- 卷 — a scroll (bundle)
-- 印 — a seal (manifest)
-- 印鑑 — seal-impression (fingerprint)
-- 體 — script style (kind handler)
-- 紋 — pattern (tag protocol)
-- 觀 — the observer (hook subscription)
-- 龜卜藏 — the runtime, viewed through plastromantic vocabulary
-
-## Glyph dictionary (after the README at repo root)
-
-- 卜 — the cascade
-- 辛 — the chisel; the cycle-runner
-- 貞 — the augur's IO surface (`察 / 刻 / 連刻 / 重 / 施`)
-- 骨 — the cels Map
-- 甲 — the shell substrate
-- 龜卜藏 — the runtime, viewed through plastromantic vocabulary
-
-## Why this example
-
-Every architectural decision in plastron is supposed to compose. The plastromancy showcase is a single document that uses every load-bearing feature. If a future change to core breaks the ritual, the design test has failed; if it still runs and prints the same omens, the architecture has held.
+The footprint is deliberately small. The interesting structural ideas
+(segments-as-flush-units, kind-as-compiler, schema-as-change-policy)
+should be reachable from ~300 lines of TypeScript.
