@@ -282,33 +282,41 @@ export const installDom = (
   const channel = createDomChannel(state, painterRoots);
   state.channelRegistry.set(channelKey, channel);
 
-  // Attach the manifest so a host loading multiple painters (each
-  // with its own channelKey) gets exactly one entry in state.segments
-  // — installDom is called per channel but the segment key stays the
-  // same. Honour the channelKey override by emitting a manifest that
-  // lists the actual channel.
+  // Build the per-install manifest. Two pieces that change per install:
+  //
+  //   • `channels`: when the caller overrides `channelKey`, the manifest
+  //     advertises that channel rather than the default.
+  //   • `lambdas`: includes the per-root patchFn keys we just registered
+  //     into state.fns via the hydrate call below. Without listing them
+  //     here, `findDependents` and the flush teardown walk over an
+  //     undercounted provides set.
   //
   // Multi-install caveat: installDom called twice with different
-  // channelKeys will leave the second invocation's channelKey as the
-  // recorded provider in `state.segments.get(PLASTRON_DOM_SEGMENT)
-  // .provides.channels` — the manifest pass overwrites rather than
-  // merges. This is intentional: the segment owns whichever channel it
-  // most recently registered. The previously-registered channel still
-  // works at runtime (it stays in state.channelRegistry), but it's no
-  // longer advertised in the manifest. Hosts wanting both channels
-  // discoverable via introspection should register the second handler
-  // manually (state.channelRegistry.set + their own manifest patch)
-  // rather than calling installDom twice.
-  const manifest: SegmentManifest =
-    channelKey === DEFAULT_DOM_CHANNEL_KEY
-      ? plastronDomManifest
-      : {
-          ...plastronDomManifest,
-          provides: {
-            ...plastronDomManifest.provides,
-            channels: [channelKey],
-          },
-        };
+  // channelKeys merges its `channels` + per-root `lambdas` into any
+  // existing PLASTRON_DOM_SEGMENT manifest already in state.segments,
+  // so introspection (`getSegmentManifest`, `findDependents`) sees the
+  // full set of registered channels and patch fns. flush still walks
+  // cels-by-segment as before — both painter sentinels fire their
+  // own `_dispose`. (Previously: this branch overwrote the manifest
+  // on each call, advertising only the latest channel and dropping
+  // earlier patch-fn registrations from the manifest's provides.)
+  const perRootLambdas: LambdaKey[] = [];
+  for (const rootKey of Object.keys(sourceRoots)) perRootLambdas.push(patchFnKey(rootKey));
+
+  const existing = state.segments.get(PLASTRON_DOM_SEGMENT);
+  const existingChannels = existing?.provides?.channels ?? [];
+  const existingLambdas  = existing?.provides?.lambdas  ?? plastronDomManifest.provides?.lambdas ?? [];
+  const mergedChannels = Array.from(new Set([...existingChannels, channelKey]));
+  const mergedLambdas  = Array.from(new Set([...existingLambdas, ...perRootLambdas]));
+
+  const manifest: SegmentManifest = {
+    ...plastronDomManifest,
+    provides: {
+      ...plastronDomManifest.provides,
+      channels: mergedChannels,
+      lambdas:  mergedLambdas,
+    },
+  };
 
   const hydrate = state.fns.get("hydrate") as Fn;
   hydrate(

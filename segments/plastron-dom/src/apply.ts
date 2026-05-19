@@ -137,35 +137,91 @@ const applyElPatch = (
           }
           break;
         case "reconcile": {
-          // Snapshot children BEFORE we touch the DOM so "keep"
-          // entries can still find their nodes by fromIndex even
-          // after we (logically) detach the whole list.
+          // Minimal-edit reconciliation.
+          //
+          // Three phases:
+          //
+          //   1. Drop. Snapshot pre-mutation children; remove any not
+          //      referenced by a "keep" entry. After this step the DOM
+          //      holds only the kept subset, in their original order.
+          //
+          //   2. Reorder. Compute the longest increasing subsequence of
+          //      kept-source-indices in the new order. Positions whose
+          //      source index is in the LIS are already in correct
+          //      relative order — they don't need to move. Walk the new
+          //      order right-to-left and `insertBefore` only the
+          //      non-LIS positions (which include all fresh mounts).
+          //
+          //   3. Patch. Apply each "keep" entry's sub-patch in place,
+          //      AFTER reordering so a replace-kind sub-patch can swap
+          //      a node via `el.replaceChild` without interfering with
+          //      the move pass.
+          //
+          // For an N-row swap this collapses from N replaceChildren'd
+          // nodes to 2 `insertBefore` calls. For a single-row removal,
+          // 1 `removeChild`. The cost is O(N log N) JS for the LIS
+          // pass, but the constant factor is small and the DOM-op
+          // savings dominate on every realistic workload.
+
+          // Phase 1: snapshot + drop.
           const snapshot: Node[] = [];
           for (let i = 0; i < el.childNodes.length; i++) {
             snapshot.push(el.childNodes[i]!);
           }
-          const keptIndices = new Set<number>();
+          const survivors = new Set<number>();
           for (const entry of op.entries) {
-            if (entry.kind === "keep") keptIndices.add(entry.fromIndex);
+            if (entry.kind === "keep") survivors.add(entry.fromIndex);
           }
-          // Children not kept are about to fall out of the tree —
-          // detach their listeners so the registry doesn't hold dead
-          // bindings.
           for (let i = 0; i < snapshot.length; i++) {
-            if (!keptIndices.has(i)) detachAllListeners(snapshot[i]!, reg);
-          }
-          const next: Node[] = [];
-          for (const entry of op.entries) {
-            if (entry.kind === "keep") {
-              const child = snapshot[entry.fromIndex];
-              if (!child) continue;
-              const patched = applyPatchToChild(child, entry.patch, reg, state, setFn);
-              next.push(patched ?? child);
-            } else {
-              next.push(createNode(entry.node, reg, state, setFn));
+            if (!survivors.has(i)) {
+              detachAllListeners(snapshot[i]!, reg);
+              el.removeChild(snapshot[i]!);
             }
           }
-          el.replaceChildren(...next);
+
+          // Build the desired new children list, alongside a source-
+          // index vector for LIS. -1 = fresh mount (never in LIS).
+          // Fresh nodes are created here; they're not yet in the DOM
+          // until phase 2 inserts them.
+          const newOrder: Node[] = new Array(op.entries.length);
+          const sourceIdx: number[] = new Array(op.entries.length);
+          for (let i = 0; i < op.entries.length; i++) {
+            const entry = op.entries[i]!;
+            if (entry.kind === "keep") {
+              newOrder[i] = snapshot[entry.fromIndex]!;
+              sourceIdx[i] = entry.fromIndex;
+            } else {
+              newOrder[i] = createNode(entry.node, reg, state, setFn);
+              sourceIdx[i] = -1;
+            }
+          }
+
+          // Phase 2: reorder. Walk right-to-left so each insertBefore
+          // can reference the previously-placed node as the anchor —
+          // avoids the cascading-shift problem of a left-to-right walk.
+          const stable = lisPositions(sourceIdx);
+          let anchor: Node | null = null;
+          for (let i = newOrder.length - 1; i >= 0; i--) {
+            const node = newOrder[i]!;
+            if (stable.has(i)) {
+              anchor = node;
+            } else {
+              el.insertBefore(node, anchor);
+              anchor = node;
+            }
+          }
+
+          // Phase 3: apply sub-patches in place. Most are noop (the
+          // common case is a permutation with stable content); the
+          // non-noop ones touch attrs/style/events/children of nodes
+          // already in their final DOM position.
+          for (let i = 0; i < op.entries.length; i++) {
+            const entry = op.entries[i]!;
+            if (entry.kind !== "keep" || entry.patch.kind === "noop") continue;
+            const node = newOrder[i]!;
+            const result = applyPatchToChild(node, entry.patch, reg, state, setFn);
+            if (result && result !== node) el.replaceChild(result, node);
+          }
           break;
         }
       }
@@ -416,4 +472,53 @@ export const detachAllListeners = (
     reg.delete(el);
   }
   for (const child of Array.from(el.childNodes)) detachAllListeners(child, reg);
+};
+
+// Longest-increasing-subsequence over `arr`, treating -1 as "never in
+// the LIS" (fresh mounts have no prior position to be in-order with).
+// Returns the set of ARRAY INDICES (positions in `arr`) whose source
+// indices form the LIS — i.e. positions whose kept node is already in
+// the correct relative DOM order and therefore does not need to move
+// during the reconcile phase 2 reorder pass.
+//
+// O(n log n) via patience-sort with binary search; parent pointers
+// frozen at insertion time so the chain reconstructs the LIS that
+// existed when each tail-replacement happened, not the final-state
+// chain. Standard textbook algorithm.
+const lisPositions = (arr: number[]): Set<number> => {
+  const n = arr.length;
+  const result = new Set<number>();
+  if (n === 0) return result;
+
+  const tails: number[] = [];        // values of each pile's top card
+  const tailsIdx: number[] = [];     // arr-index of each pile's top
+  const parent = new Array<number>(n).fill(-1);
+
+  for (let i = 0; i < n; i++) {
+    const v = arr[i]!;
+    if (v === -1) continue;          // fresh mount — skip
+    // Binary search for first tail ≥ v.
+    let lo = 0, hi = tails.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (tails[mid]! < v) lo = mid + 1;
+      else hi = mid;
+    }
+    if (lo === tails.length) {
+      tails.push(v);
+      tailsIdx.push(i);
+    } else {
+      tails[lo] = v;
+      tailsIdx[lo] = i;
+    }
+    parent[i] = lo > 0 ? tailsIdx[lo - 1]! : -1;
+  }
+
+  if (tailsIdx.length === 0) return result;
+  let cur: number | undefined = tailsIdx[tailsIdx.length - 1];
+  while (cur !== undefined && cur !== -1) {
+    result.add(cur);
+    cur = parent[cur];
+  }
+  return result;
 };

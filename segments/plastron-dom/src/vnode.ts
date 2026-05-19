@@ -123,10 +123,10 @@ export const text = (s: string | number | boolean): VText => ({
   text: String(s),
 });
 
-type Child = VNode | string | number | boolean;
+type Child = VNode | string | number | boolean | null | undefined | false;
 
-const toChild = (c: Child): VNode =>
-  typeof c === "object" && c !== null ? c : text(c);
+const toChild = (c: Exclude<Child, null | undefined | false>): VNode =>
+  typeof c === "object" ? c : text(c);
 
 /** Build a VElement. Props prefixed with `on` (e.g. `onClick`) become
  *  event bindings. A `style` prop holding a record becomes the inline
@@ -165,7 +165,14 @@ export const el = (
   if (Object.keys(attrs).length > 0) node.attrs = attrs;
   if (style && Object.keys(style).length > 0) node.style = style;
   if (Object.keys(events).length > 0) node.events = events;
-  if (children.length > 0) node.children = children.map(toChild);
+  if (children.length > 0) {
+    const filtered: VNode[] = [];
+    for (const c of children) {
+      if (c === null || c === undefined || c === false) continue;
+      filtered.push(toChild(c));
+    }
+    if (filtered.length > 0) node.children = filtered;
+  }
   return node;
 };
 
