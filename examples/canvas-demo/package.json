@@ -1,0 +1,20 @@
+{
+  "name": "canvas-demo",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Smoke test for plastron-canvas — bouncing circle driven by a reactive scene cel.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3",
+    "vite": "^5.4.10"
+  }
+}

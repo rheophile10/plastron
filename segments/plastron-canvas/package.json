@@ -1,0 +1,17 @@
+{
+  "name": "plastron-canvas",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "rAF-batched Canvas 2D painter — bind a cel to a <canvas>, paint via a user-supplied draw fn on each cel change. Same architectural shape as plastron-dom (channel + rAF coalescer + sentinel teardown), no diff/patch machinery (Canvas 2D is immediate-mode).",
+  "main": "src/index.ts",
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}

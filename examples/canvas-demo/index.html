@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>plastron-canvas — smoke</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <h1>plastron-canvas — bouncing circle</h1>
+    <canvas id="scene"></canvas>
+    <p class="info">
+      One <code>t</code> cel, one <code>scene</code> lambda, one canvas channel.
+      Mutating <code>t</code> on each <code>rAF</code> triggers a cascade →
+      scene recomputes → channel paints.
+    </p>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
