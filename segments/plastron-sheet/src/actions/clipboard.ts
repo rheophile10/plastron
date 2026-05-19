@@ -1,7 +1,15 @@
-import type { DehydratedCel, Fn, State } from "../../../../plastron/src/index.js";
+import type { CelTriple, DehydratedCel, Fn, State } from "../../../../plastron/src/index.js";
 import { COLS, ROWS, addressOf, parseAddress, rectFor } from "../domain/address.js";
-import { SHEET_SEGMENT, classifyInput } from "../domain/parse.js";
+import { classifyInput } from "../domain/parse.js";
 import { buildTSV, parseTSV } from "../domain/tsv.js";
+
+/** Convert a `classifyInput` DehydratedCel into a CelTriple for
+ *  setCelBatch. See cell.ts for the longer version of this comment;
+ *  duplicated here to keep clipboard.ts self-contained. */
+const dcToTriple = (dc: DehydratedCel): CelTriple =>
+  dc.f !== undefined
+    ? { f: dc.f, l: null }
+    : { v: dc.v ?? "", f: null, l: null };
 
 // ============================================================================
 // Clipboard actions — copy / cut / paste / clear, plus the marching-
@@ -84,7 +92,7 @@ export const pasteFromClipboard = async (
 
   const sources = (state.cels.get("__sheet:sources")?.v as Record<string, string>) ?? {};
   const nextSources: Record<string, string> = { ...sources };
-  const cels: DehydratedCel[] = [];
+  const triples: Record<string, CelTriple> = {};
   const pasteAddrs = new Set<string>();
 
   for (let dr = 0; dr < rows.length; dr++) {
@@ -95,10 +103,10 @@ export const pasteFromClipboard = async (
       if (c >= COLS || r >= ROWS) continue;
       const addr = addressOf(c, r);
       pasteAddrs.add(addr);
-      cels.push(classifyInput(addr, row[dc]!.trim(), nextSources));
+      triples[addr] = dcToTriple(classifyInput(addr, row[dc]!.trim(), nextSources));
     }
   }
-  if (cels.length === 0) return false;
+  if (Object.keys(triples).length === 0) return false;
 
   // If the marker says "cut", clear the source rectangle — except
   // cells that overlap with the paste destination.
@@ -110,7 +118,7 @@ export const pasteFromClipboard = async (
         for (let c = cutRect.c0; c <= cutRect.c1; c++) {
           const addr = addressOf(c, r);
           if (pasteAddrs.has(addr)) continue;
-          cels.push({ key: addr, v: "", segment: SHEET_SEGMENT });
+          triples[addr] = { v: "", f: null, l: null };
           delete nextSources[addr];
         }
       }
@@ -118,20 +126,21 @@ export const pasteFromClipboard = async (
   }
 
   event.preventDefault();
-  const hydrate = state.fns.get("hydrate") as Fn;
-  const setFn = state.fns.get("set") as Fn;
-  hydrate(state, [{ key: SHEET_SEGMENT, cels }], []);
-  await (state.fns.get("runCycle") as Fn)(state);
-  await setFn(state, "__sheet:sources", nextSources);
 
+  // Bundle the cell-role changes + bookkeeping into ONE setCelBatch
+  // call so the cascade fires once for the union of affected keys.
+  // Previously: hydrate → runCycle → set → set → set (5+ cascades).
+  triples["__sheet:sources"]  = { v: nextSources };
+  triples["__sheet:copyMark"] = { v: null };
   // Move selection extent to cover the pasted block.
   const lastC = Math.min(COLS - 1, startPos.col + Math.max(...rows.map((r) => r.length)) - 1);
   const lastR = Math.min(ROWS - 1, startPos.row + rows.length - 1);
   if (lastC > startPos.col || lastR > startPos.row) {
-    await setFn(state, "__sheet:selectionEnd", addressOf(lastC, lastR));
+    triples["__sheet:selectionEnd"] = { v: addressOf(lastC, lastR) };
   }
-  // Pasting consumes the copy/cut.
-  await setFn(state, "__sheet:copyMark", null);
+
+  const setCelBatch = state.fns.get("setCelBatch") as Fn;
+  await setCelBatch(state, triples);
   return true;
 };
 
@@ -147,19 +156,19 @@ export const clearSelection: Fn = async (...args: unknown[]) => {
 
   const sources = (state.cels.get("__sheet:sources")?.v as Record<string, string>) ?? {};
   const nextSources: Record<string, string> = { ...sources };
-  const cels: DehydratedCel[] = [];
+  const triples: Record<string, CelTriple> = {};
   for (let r = rect.r0; r <= rect.r1; r++) {
     for (let c = rect.c0; c <= rect.c1; c++) {
       const addr = addressOf(c, r);
-      cels.push({ key: addr, v: "", segment: SHEET_SEGMENT });
+      triples[addr] = { v: "", f: null, l: null };
       delete nextSources[addr];
     }
   }
+  triples["__sheet:sources"] = { v: nextSources };
 
-  const hydrate = state.fns.get("hydrate") as Fn;
-  hydrate(state, [{ key: SHEET_SEGMENT, cels }], []);
-  await (state.fns.get("runCycle") as Fn)(state);
-  await (state.fns.get("set") as Fn)(state, "__sheet:sources", nextSources);
+  // One cascade for the union (was hydrate → runCycle → set: 3
+  // cascades). Cookbook §3b + §13.
+  await (state.fns.get("setCelBatch") as Fn)(state, triples);
 };
 
 /** Clear the marching-ants overlay (Escape, or any other "cancel

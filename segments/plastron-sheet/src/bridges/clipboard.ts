@@ -13,17 +13,29 @@ const editingNow = (): boolean => {
   return ae instanceof HTMLInputElement || ae instanceof HTMLTextAreaElement;
 };
 
-export const installClipboardBridge = (state: State): void => {
-  document.addEventListener("copy", (event) => {
+/** Install the clipboard bridge and return a disposer that removes all
+ *  three (copy / cut / paste) document-level listeners. */
+export const installClipboardBridge = (state: State): (() => void) => {
+  const copyHandler  = (event: ClipboardEvent): void => {
     if (editingNow()) return;
     copySelectionTo(state, event);
-  });
-  document.addEventListener("cut", (event) => {
+  };
+  const cutHandler   = (event: ClipboardEvent): void => {
     if (editingNow()) return;
     cutSelectionTo(state, event);
-  });
-  document.addEventListener("paste", (event) => {
+  };
+  const pasteHandler = (event: ClipboardEvent): void => {
     if (editingNow()) return;
     void pasteFromClipboard(state, event);
-  });
+  };
+
+  document.addEventListener("copy",  copyHandler);
+  document.addEventListener("cut",   cutHandler);
+  document.addEventListener("paste", pasteHandler);
+
+  return () => {
+    document.removeEventListener("copy",  copyHandler);
+    document.removeEventListener("cut",   cutHandler);
+    document.removeEventListener("paste", pasteHandler);
+  };
 };

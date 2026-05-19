@@ -1,11 +1,15 @@
-import type { Fn, SegmentManifest, State } from "../../../plastron/src/index.js";
+import type { Cel, Fn, SegmentManifest, State } from "../../../plastron/src/index.js";
+import { PLASTRON_DOM_SEGMENT } from "../../plastron-dom/src/index.js";
 import { infixFormula } from "./formula.js";
 import { buildSheetSegment } from "./segments/sheet.js";
+import { buildFnMathSegment } from "./segments/fnMath.js";
 import { stopDragging } from "./actions/selection.js";
 import { installKeyboardBridge } from "./bridges/keyboard.js";
 import { installClipboardBridge } from "./bridges/clipboard.js";
 import { installMarqueeBridge } from "./bridges/marquee.js";
-import { SHEET_SEGMENT } from "./domain/parse.js";
+import {
+  DEFAULT_SHEET_NAME, SHEET_CONTROLS_SEGMENT,
+} from "./domain/parse.js";
 
 // ============================================================================
 // segment: plastron-sheet
@@ -36,23 +40,28 @@ import { SHEET_SEGMENT } from "./domain/parse.js";
 // demo — this segment is the lifted, packaged form.
 // ============================================================================
 
-export const PLASTRON_SHEET_SEGMENT = SHEET_SEGMENT;
+/** Identifier for the workbook's "anchor" segment — the controls
+ *  segment that carries the render tree, workbook-level state, and
+ *  the bridge-disposer sentinel. Hosts that want to tear down the
+ *  whole plastron-sheet bundle should call `flushSheets(state)` (or
+ *  `flush(state, SHEET_CONTROLS_SEGMENT)` followed by flushing each
+ *  `sheet:<Name>` user segment — the sentinel's `_dispose` does the
+ *  user-sheet sweep automatically). */
+export const PLASTRON_SHEET_SEGMENT = SHEET_CONTROLS_SEGMENT;
 
-/** Manifest for the plastron-sheet segment. The render lambda and
- *  every action handler are listed under `provides.lambdas`. The
- *  segment owns its own cel segment (`sheet`) and depends on
- *  `plastron-dom` only insofar as the rendered tree contains VNodes —
- *  the dependency is on the vnode shape, not on installDom having run.
- *  We declare it as a soft dependency so a host using a different
- *  painter (or no painter at all, e.g. snapshot tests) can still
- *  hydrate the sheet. */
-export const plastronSheetManifest: SegmentManifest = {
-  segment: PLASTRON_SHEET_SEGMENT,
+/** Manifest for the plastron-sheet **controls** segment — workbook-
+ *  level state, the render tree, every action lambda, and the
+ *  bridge-disposer sentinel. Per-user-sheet manifests are produced by
+ *  `userSheetManifestFor(name)` and shipped alongside the cells. */
+export const plastronSheetControlsManifest: SegmentManifest = {
+  segment: SHEET_CONTROLS_SEGMENT,
   version: "1.0.0",
   description:
-    "Excel-style spreadsheet — per-cell cels, infix formulas, selection / edit / clipboard.",
+    "Workbook controls for plastron-sheet — render tree, selection / " +
+    "edit / clipboard state, the activeSheet cel, and the bridge-" +
+    "disposer sentinel. User cells live in sibling sheet:<Name> segments.",
   dependsOn: [
-    { segment: "plastronDom", required: false },
+    { segment: PLASTRON_DOM_SEGMENT, required: false },
   ],
   provides: {
     lambdas: [
@@ -70,9 +79,27 @@ export const plastronSheetManifest: SegmentManifest = {
       "sheet:formulaBarBlur",
     ],
     schemas: [],
-    celSegments: [PLASTRON_SHEET_SEGMENT],
+    celSegments: [SHEET_CONTROLS_SEGMENT],
   },
 };
+
+/** Manifest for one user sheet's cells. Each user sheet gets its own
+ *  segment so flush / dehydrate / replace happen at sheet granularity.
+ *  No lambdas — render fns and action handlers live in the controls
+ *  segment alongside the appTree they feed. */
+export const userSheetManifestFor = (name: string): SegmentManifest => ({
+  segment: `sheet:${name}`,
+  version: "1.0.0",
+  description: `User cell segment for sheet "${name}".`,
+  provides: {
+    celSegments: [`sheet:${name}`],
+  },
+});
+
+/** Back-compat: the manifest the segment used to ship as one piece.
+ *  New code should use `plastronSheetControlsManifest` +
+ *  `userSheetManifestFor(name)`. */
+export const plastronSheetManifest = plastronSheetControlsManifest;
 
 export interface InstallSheetOptions {
   /** Wire the document-level keyboard / clipboard / marquee / mouseup
@@ -86,14 +113,23 @@ export interface SheetHandle {
   /** Cel key for the tree the renderer writes into. Pass to installDom
    *  as the cel for whichever root will mount the sheet. */
   treeCel: string;
-  /** Tear-down hook for the document-level bridges. Removes the
-   *  mouseup listener installed by installSheet. The keyboard /
-   *  clipboard bridges register their own document listeners that this
-   *  hook does NOT remove (they capture state, not external resources;
-   *  flushing the sheet segment makes them no-op since their action
-   *  lookups via state.fns will return undefined). */
+  /** Tear-down hook for the document-level bridges. Calls every bridge
+   *  disposer registered during `installSheet`. Also invoked by the
+   *  sentinel cel's `_dispose` when `flush(state, "sheet")` fires, so
+   *  hosts get the same cleanup whether they call `handle.dispose()`
+   *  manually or flush the segment.
+   *
+   *  Note (per decision 2 in notes/todo.md): the kernel's `f` slot is
+   *  NOT restored — the sheet's formula compiler swap is treated as
+   *  effectively permanent for a session. Re-installing a different
+   *  formula compiler is the host's responsibility after flush. */
   dispose: () => void;
 }
+
+/** Sentinel cel key. The kernel's `flush(state, "sheet")` walks every
+ *  cel with `segment === "sheet"` and fires `_dispose` on each — this
+ *  one carries the bridge-disposer closure. */
+const SHEET_SENTINEL_KEY = "__sheet:sentinel" as const;
 
 /** Install the plastron-sheet segment on an existing State. Replaces
  *  the kernel's formula compiler, hydrates the sheet's cels +
@@ -111,34 +147,82 @@ export const installSheet = (
   //    update). The kernel's `f` slot is intentionally unlocked.
   hydrate(state, [], [new Map([["f", infixFormula]])]);
 
-  // 2) Build the sheet segment (cels + lambdas) and hydrate with the
-  //    manifest attached.
+  // 2) Build the sheet's three segments (controls + default user
+  //    sheet + the math function library) and hydrate them in one
+  //    call. The lambdas for the render tree + action handlers travel
+  //    with the controls manifest; user-cell and fn-library segments
+  //    are lambda-free (their cels carry their fn in `v`).
   const sheet = buildSheetSegment();
+  const fnMath = buildFnMathSegment();
   hydrate(
     state,
-    [{ ...sheet.segment, manifest: plastronSheetManifest }],
+    [
+      { ...sheet.controls,  manifest: plastronSheetControlsManifest },
+      { ...sheet.userSheet, manifest: userSheetManifestFor(DEFAULT_SHEET_NAME) },
+      fnMath,
+    ],
     [sheet.fns],
   );
 
-  // 3) Wire document-level bridges unless the host opts out.
-  let mouseUpListener: ((e: MouseEvent) => void) | null = null;
+  // 3) Wire document-level bridges unless the host opts out. Each
+  //    bridge installer returns its own disposer; we collect them
+  //    into one closure for the sentinel cel.
+  const disposers: Array<() => void> = [];
   if (installBridges && typeof document !== "undefined") {
-    mouseUpListener = stopDragging;
-    document.addEventListener("mouseup", mouseUpListener);
-    installKeyboardBridge(state);
-    installClipboardBridge(state);
-    installMarqueeBridge();
+    document.addEventListener("mouseup", stopDragging);
+    disposers.push(() => document.removeEventListener("mouseup", stopDragging));
+    disposers.push(installKeyboardBridge(state));
+    disposers.push(installClipboardBridge(state));
+    disposers.push(installMarqueeBridge());
   }
 
-  return {
-    treeCel: "appTree",
-    dispose: () => {
-      if (mouseUpListener) {
-        document.removeEventListener("mouseup", mouseUpListener);
-        mouseUpListener = null;
+  // Idempotent: `dispose` only runs the disposers once even if both
+  // `handle.dispose()` and the sentinel `_dispose` fire (e.g. caller
+  // disposes manually then later flushes).
+  let disposed = false;
+  const dispose = (): void => {
+    if (disposed) return;
+    disposed = true;
+    for (const d of disposers) {
+      try { d(); } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error("[plastron-sheet] bridge dispose failed:", err);
       }
-    },
+    }
+    disposers.length = 0;
+
+    // Sweep user-sheet segments. flush() is per-segment in the kernel,
+    // so we walk state.segments to find every `sheet:<Name>` other
+    // than the controls segment and tear it down. This way callers
+    // need only `flush(state, SHEET_CONTROLS_SEGMENT)` for a full
+    // workbook teardown — no second-level bookkeeping required.
+    const flush = state.fns.get("flush") as Fn;
+    const userSheetKeys: string[] = [];
+    for (const key of state.segments.keys()) {
+      if (typeof key !== "string") continue;
+      if (key === SHEET_CONTROLS_SEGMENT) continue;
+      if (key.startsWith("sheet:")) userSheetKeys.push(key);
+    }
+    for (const key of userSheetKeys) {
+      try { flush(state, key); } catch (err) {
+        // eslint-disable-next-line no-console
+        console.error(`[plastron-sheet] flush "${key}" failed:`, err);
+      }
+    }
   };
+
+  // 4) Sentinel cel — lives in the CONTROLS segment, so
+  //    `flush(state, SHEET_CONTROLS_SEGMENT)` fires this `_dispose`,
+  //    which tears down listeners AND sweeps user-sheet segments.
+  const sentinel: Cel = {
+    key: SHEET_SENTINEL_KEY,
+    v: null,
+    segment: SHEET_CONTROLS_SEGMENT,
+    _dispose: dispose,
+  };
+  state.cels.set(sentinel.key, sentinel);
+
+  return { treeCel: "appTree", dispose };
 };
 
 // Public exports for hosts that want to drop one of the pre-baked
@@ -146,6 +230,9 @@ export const installSheet = (
 // in a different formula compiler).
 export { infixFormula } from "./formula.js";
 export { buildSheetSegment } from "./segments/sheet.js";
+export {
+  buildFnMathSegment, fnMathManifest, SHEET_FN_MATH_SEGMENT,
+} from "./segments/fnMath.js";
 export { renderApp } from "./render/app.js";
 export { renderGrid } from "./render/grid.js";
 export { renderToolbar } from "./render/toolbar.js";
@@ -154,7 +241,8 @@ export {
 } from "./domain/address.js";
 export type { Rect } from "./domain/address.js";
 export {
-  classifyInput, SHEET_SEGMENT,
+  classifyInput,
+  SHEET_SEGMENT, SHEET_CONTROLS_SEGMENT, DEFAULT_SHEET_NAME, sheetSegmentFor,
 } from "./domain/parse.js";
 export { displayValue } from "../../plastron-dom/src/index.js";
 export { buildTSV, parseTSV } from "./domain/tsv.js";

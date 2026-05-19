@@ -53,11 +53,14 @@ const positionMarquee = (): void => {
 };
 
 /** Wire a MutationObserver to keep the marquee positioned every time
- *  the grid mutates. Call once at startup. */
-export const installMarqueeBridge = (): void => {
+ *  the grid mutates. Returns a disposer that disconnects the observer.
+ *  Call once at startup; the sentinel cel installed by installSheet
+ *  calls the disposer on `flush(state, "sheet")`. */
+export const installMarqueeBridge = (): (() => void) => {
   const root = document.querySelector("#root");
-  if (!root) return;
-  new MutationObserver(positionMarquee).observe(root, {
+  if (!root) return () => { /* noop — nothing was wired */ };
+  const observer = new MutationObserver(positionMarquee);
+  observer.observe(root, {
     childList: true,
     subtree: true,
     attributes: true,
@@ -66,4 +69,5 @@ export const installMarqueeBridge = (): void => {
   // Catch the first appearance, in case the observer fires before we
   // have time to set up.
   positionMarquee();
+  return () => observer.disconnect();
 };

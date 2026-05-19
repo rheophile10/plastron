@@ -1,6 +1,15 @@
-import type { Fn, State } from "../../../../plastron/src/index.js";
-import { SHEET_SEGMENT, classifyInput } from "../domain/parse.js";
+import type { CelTriple, DehydratedCel, Fn, State } from "../../../../plastron/src/index.js";
+import { classifyInput } from "../domain/parse.js";
 import { moveSelection } from "./selection.js";
+
+/** Convert the output of `classifyInput` into a CelTriple suitable for
+ *  setCelBatch. Either path explicitly clears the other compute fields
+ *  so a formula→value or value→formula transition fully replaces the
+ *  cel's role atomically. */
+const dcToTriple = (dc: DehydratedCel): CelTriple =>
+  dc.f !== undefined
+    ? { f: dc.f, l: null }
+    : { v: dc.v ?? "", f: null, l: null };
 
 // ============================================================================
 // Cell-edit actions: enter/leave edit mode, commit, type-to-edit, plus
@@ -49,21 +58,22 @@ export const typeIntoSelected: Fn = async (...args: unknown[]) => {
 
 const commitFromInput = async (state: State, addr: string, raw: string): Promise<void> => {
   const trimmed = raw.trim();
-  const hydrate = state.fns.get("hydrate") as Fn;
-  const setFn = state.fns.get("set") as Fn;
+  const setCelBatch = state.fns.get("setCelBatch") as Fn;
 
   const sources = (state.cels.get("__sheet:sources")?.v as Record<string, string>) ?? {};
   const nextSources: Record<string, string> = { ...sources };
-
   const dc = classifyInput(addr, trimmed, nextSources);
 
-  hydrate(state, [{ key: SHEET_SEGMENT, cels: [dc] }], []);
-  await (state.fns.get("runCycle") as Fn)(state);
-  await setFn(state, "__sheet:sources", nextSources);
-  await (state.fns.get("batch") as Fn)(state, [
-    ["__sheet:editing",  ""],
-    ["__sheet:editSeed", ""],
-  ]);
+  // One atomic write: cel role change + sources update + clear edit
+  // state. setCelBatch fires a single cascade over the union of all
+  // affected keys — was previously hydrate → runCycle → set → batch
+  // (3+ cascades) per commit. Cookbook §3b + §13.
+  await setCelBatch(state, {
+    [addr]:              dcToTriple(dc),
+    "__sheet:sources":   { v: nextSources },
+    "__sheet:editing":   { v: "" },
+    "__sheet:editSeed":  { v: "" },
+  });
 };
 
 export const editKeyDown: Fn = async (...args: unknown[]) => {

@@ -24,11 +24,14 @@ const editingNow = (): boolean => {
   return ae instanceof HTMLInputElement || ae instanceof HTMLTextAreaElement;
 };
 
-export const installKeyboardBridge = (state: State): void => {
+/** Install the keyboard bridge and return a disposer that removes the
+ *  document-level keydown listener. Called by installSheet's sentinel
+ *  `_dispose` so `flush(state, "sheet")` leaves no dangling listeners. */
+export const installKeyboardBridge = (state: State): (() => void) => {
   const typeIntoSelected = state.fns.get("sheet:typeIntoSelected") as Fn;
   const moveSelection    = state.fns.get("sheet:moveSelection")    as Fn;
 
-  document.addEventListener("keydown", async (event) => {
+  const handler = async (event: KeyboardEvent): Promise<void> => {
     if (editingNow()) return;
     if (event.metaKey || event.ctrlKey || event.altKey) return;
 
@@ -71,5 +74,8 @@ export const installKeyboardBridge = (state: State): void => {
       input.focus();
       input.setSelectionRange(input.value.length, input.value.length);
     }
-  });
+  };
+
+  document.addEventListener("keydown", handler);
+  return () => document.removeEventListener("keydown", handler);
 };
