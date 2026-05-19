@@ -148,3 +148,49 @@ BENCH_PARAMS_OVERRIDE_CELLX='{"plastronOneCel":{"sizes":[2000]}}' \
 ```
 
 Aggregated JSON lands in `bench/results/runner-<ts>.json`. The directory is gitignored — results are per-machine.
+
+---
+
+## krausest js-framework-benchmark
+
+Distinct from the per-cel cascade benchmarks above — this is the
+**DOM-rendering** benchmark suite the framework world runs. The
+internal benchmarks measure plastron's cascade machinery; krausest
+measures plastron-dom's vnode-diff + DOM-mutation perf against the
+React/Vue/Angular tier.
+
+plastron-dom is submitted upstream as **PR [krausest/js-framework-benchmark#2015](https://github.com/krausest/js-framework-benchmark/pull/2015)** (keyed + non-keyed divisions, pinned at plastron `66575305d030`, 2026-05-19). Real numbers come from krausest's CI machine when the PR is reviewed and merged into <https://krausest.github.io/js-framework-benchmark/current.html>. The local sanity-check numbers below are 15-iteration medians on this sandbox (Chrome 148, Ubuntu 26.04) — useful for ballpark, not publishable.
+
+**Geomean across the 9 standard CPU benchmarks (× vanillajs, lower=better):**
+
+| Framework | × vanilla |
+|---|---:|
+| vanillajs | 1.00× (baseline) |
+| react-hooks | 1.65× |
+| react+compiler | 1.71× |
+| plastron-dom non-keyed | 1.74× |
+| plastron-dom keyed | 1.91× |
+
+**Per-benchmark, plastron-dom keyed vs react-hooks** (>1 = plastron faster):
+
+| Benchmark | ratio |
+|---|---:|
+| 01_run1k | 0.83× |
+| 02_replace1k | 1.03× |
+| 03_update10th1k_x16 | 0.57× |
+| 04_select1k | 0.24× |
+| **05_swap1k** | **3.23×** |
+| 06_remove-one-1k | 0.80× |
+| **07_create10k** | **1.31×** |
+| 08_create1k-after1k_x2 | 1.05× |
+| 09_clear1k_x8 | 0.64× |
+
+Takeaways:
+
+- **plastron-dom sits in the React/Angular tier** on geomean — same league overall, with wins on structural-change benchmarks (swap, create, replace) and losses on small-surgical-update benchmarks (select, update-every-Nth, clear).
+- **`05_swap1k`: plastron 3.2× faster than react-hooks.** This is the LIS-based keyed reconciliation in `segments/plastron-dom/src/apply.ts` — a 1000-row swap collapses into 2 `insertBefore` calls.
+- **`04_select1k`: plastron ~4× slower than react-hooks.** plastron's "one cel for the whole render tree" trade-off (cookbook §1a): a `selectedIdx` change invalidates the whole render lambda, which regenerates all 1000 row vnodes. React with `memo` skips 998 of them. Fixable via per-row reactivity (each row a render cel) — a documented Phase 3 follow-up — but architectural, not a bug.
+- **React Compiler doesn't move the needle on krausest.** `react+compiler` at 1.71× vs `react-hooks` at 1.65× is statistical noise. The Compiler memoizes at component boundaries; krausest is a monolithic single-component render with no boundaries to optimize.
+
+Methodology + reproduction recipe: `bench/krausest/README.md`.
+Framework dir source: `bench/krausest/{keyed,non-keyed}/plastron-dom-v0.0.2/`.
