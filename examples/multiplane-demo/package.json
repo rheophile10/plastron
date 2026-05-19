@@ -1,0 +1,21 @@
+{
+  "name": "multiplane-demo",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Disney's multiplane camera, but every parameter is a reactive cel. Demonstrates plastron-canvas + plastron-multiplane + plastron-dom composing in one app.",
+  "scripts": {
+    "dev": "vite",
+    "build": "tsc && vite build",
+    "preview": "vite preview",
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3",
+    "vite": "^5.4.10",
+    "vite-plugin-singlefile": "^2.0.0"
+  }
+}

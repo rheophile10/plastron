@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>plastron-multiplane — Disney's multiplane camera as reactive cels</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <header>
+      <h1>plastron-multiplane</h1>
+      <p class="tagline">
+        Disney's multiplane camera, but every parameter is a reactive cel.
+      </p>
+    </header>
+    <main>
+      <canvas id="scene"></canvas>
+      <div id="controls"></div>
+      <div id="devtools"></div>
+    </main>
+    <footer>
+      <p>
+        Cel graph: <code>frame</code> → <code>camera</code> → <code>scene</code>
+        → canvas channel.
+        <code>lighting</code> → <code>palette</code> → <code>layers</code>
+        (offscreen-canvas-painted) → <code>scene</code>.
+        All four cels are independent; the cascade keeps everything coherent.
+      </p>
+    </footer>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
