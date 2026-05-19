@@ -62,6 +62,7 @@ console.log(get(state, "total"));                   // sync read
 | `dehydrate` | `(state, opts?) → Segment[]` | Serializable inverse of hydrate. Drops runtime-only fields. Filtered to user segments by default. |
 | `runCycle` | `(state) → Promise<State>` | Fire the dynamic cascade (cels marked `dynamic: true`). Call once at boot to prime. |
 | `set` | `(state, key, value, opts?) → Promise<State>` | Single write; one cascade. `opts.flush` drains channels after. |
+| `update` | `(state, key, fn, opts?) → Promise<State>` | Read-transform-write sugar: `set(state, key, fn(get(state, key)), opts)`. Same cascade semantics as `set`; useful when next value depends on current (collection-shaped cel values, counters, etc.). |
 | `batch` | `(state, [[k,v], …], opts?) → Promise<State>` | Multiple writes merged into one cascade. |
 | `get` | `(state, key) → unknown` | Sync read of cel value (resolves through refs). |
 | `touch` | `(state, key) → Promise<State>` | Force cel + downstream to refire. |

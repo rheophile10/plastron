@@ -2,7 +2,7 @@ import type { Fn, Key, LambdaKey, LambdaMetadata, State } from "../types/index.j
 import { hydrate, dehydrate } from "./hydrate.js";
 import { runCycle } from "./runCycle.js";
 import {
-  get, set, batch, touch, consume, drain,
+  get, set, update, batch, touch, consume, drain,
   getCel, getCelBatch, setCel, setCelBatch, registerLambda,
 } from "./input.js";
 import { flush } from "./flush.js";
@@ -170,6 +170,7 @@ const compareRuntimeProfile: Fn = (state: State) => {
 const coreFnEntries: ReadonlyArray<CoreFnEntry> = [
   { key: "get",                     fn: get,                     locked: true  },
   { key: "set",                     fn: set,                     locked: true  },
+  { key: "update",                  fn: update,                  locked: true  },
   { key: "batch",                   fn: batch,                   locked: true  },
   { key: "getCel",                  fn: getCel,                  locked: true  },
   { key: "setCel",                  fn: setCel,                  locked: true  },

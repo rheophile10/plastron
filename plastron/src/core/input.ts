@@ -166,6 +166,27 @@ export const set: Fn = async (
   return state;
 };
 
+/** Read-transform-write convenience. Equivalent to
+ *  `set(state, key, fn(get(state, key)), opts)` — sugar for the case
+ *  where a cel's value is a collection (array / object) that the
+ *  caller wants to modify by replacement rather than spelling out the
+ *  read step. Same async / cascade semantics as `set`.
+ *
+ *  No different from `set` semantically: cel values are immutable from
+ *  the outside; `update` just bundles the read into the call. Useful
+ *  in event handlers that compute the next value from the current. */
+export const update: Fn = async (
+  state: State, key: Key, fn: (current: unknown) => unknown, opts?: SetOpts,
+) => {
+  const cel = state.cels.get(key);
+  const current = cel ? (cel.ref ? resolveValue(state, cel) : cel.v) : undefined;
+  const next = fn(current);
+  const fired = writeOne(state, key, next);
+  await runCascade(state, affectedFor(state, [fired]), new Set([fired]));
+  if (opts?.flush) await flushChannels(state, opts.flush);
+  return state;
+};
+
 export const batch: Fn = async (
   state: State, writes: Array<[Key, unknown]>, opts?: SetOpts,
 ) => {
