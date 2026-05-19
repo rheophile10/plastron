@@ -45,29 +45,72 @@ export const sheetSegmentFor = (name: string): `sheet:${string}` =>
  *  can be used as a `const`-typed segment value at hydrate time. */
 export const SHEET_SEGMENT = sheetSegmentFor(DEFAULT_SHEET_NAME);
 
+/** Build a fully-qualified cel key for a cell of a given sheet.
+ *  `cellKeyFor("Sheet1", "A1")` → `"Sheet1:A1"`. Cel keys are flat
+ *  across `state.cels`, so multi-sheet support requires sheet-
+ *  prefixed keys to keep cells of different sheets distinct.
+ *
+ *  In-sheet bookkeeping (selection, editing) continues to store
+ *  bare addresses ("A1") — the host pairs them with `activeSheet`
+ *  at read time to derive the full key. */
+export const cellKeyFor = (sheet: string, addr: string): string =>
+  `${sheet}:${addr}`;
+
+/** Translate the bare-name deps of an infix formula (cell refs like
+ *  "A1", function-library refs like "fn:SUM") into an inputMap that
+ *  scopes cell refs to the given user sheet while leaving function-
+ *  library refs as global keys. Used at hydrate time for seeded
+ *  formula cels AND at runtime by `commitFromInput` when the user
+ *  enters a formula whose dependency set may have changed.
+ *
+ *  Function libraries are workbook-wide (the `sheet:fn:math` segment
+ *  lives once for the whole workbook), so `fn:SUM` resolves to
+ *  itself. Cell refs are sheet-scoped, so `A1` resolves to
+ *  `${sheet}:A1`. */
+export const buildFormulaInputMap = (
+  sheet: string,
+  deps: readonly string[],
+): Record<string, string> => {
+  const map: Record<string, string> = {};
+  for (const dep of deps) {
+    map[dep] = dep.startsWith("fn:") ? dep : cellKeyFor(sheet, dep);
+  }
+  return map;
+};
+
 /** Build a dehydrated cel from raw user-input text and update the
  *  formula-source side-table. `"=…"` becomes a formula cel; numeric
- *  strings become numbers; everything else stays as a string. */
+ *  strings become numbers; everything else stays as a string.
+ *
+ *  `addr` is the in-sheet address ("A1", "B5"). `sheet` is the
+ *  active user-sheet name (e.g. "Sheet1"). The returned dehydrated
+ *  cel's `key` is the fully-qualified sheet:addr form so it sits in
+ *  the right segment without collisions. The sources side-table is
+ *  still keyed by bare addr — sources is per-sheet (lives in
+ *  __sheet:sources, which the host maintains per active sheet). */
 export const classifyInput = (
   addr: string,
   trimmed: string,
   sources: Record<string, string>,
+  sheet: string = DEFAULT_SHEET_NAME,
 ): DehydratedCel => {
+  const segment = sheetSegmentFor(sheet);
+  const key = cellKeyFor(sheet, addr);
   if (trimmed === "") {
     delete sources[addr];
-    return { key: addr, v: "", segment: SHEET_SEGMENT };
+    return { key, v: "", segment };
   }
   if (trimmed.startsWith("=")) {
     const src = trimmed.slice(1).trim();
     sources[addr] = src;
-    return { key: addr, f: src, segment: SHEET_SEGMENT };
+    return { key, f: src, segment };
   }
   const num = Number(trimmed);
   delete sources[addr];
   if (Number.isFinite(num) && trimmed !== "") {
-    return { key: addr, v: num, segment: SHEET_SEGMENT };
+    return { key, v: num, segment };
   }
-  return { key: addr, v: trimmed, segment: SHEET_SEGMENT };
+  return { key, v: trimmed, segment };
 };
 
 // displayValue moved to plastron-dom; re-exported from this segment's

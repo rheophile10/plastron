@@ -7,9 +7,7 @@ import { stopDragging } from "./actions/selection.js";
 import { installKeyboardBridge } from "./bridges/keyboard.js";
 import { installClipboardBridge } from "./bridges/clipboard.js";
 import { installMarqueeBridge } from "./bridges/marquee.js";
-import {
-  DEFAULT_SHEET_NAME, SHEET_CONTROLS_SEGMENT,
-} from "./domain/parse.js";
+import { SHEET_CONTROLS_SEGMENT } from "./domain/parse.js";
 
 // ============================================================================
 // segment: plastron-sheet
@@ -147,18 +145,26 @@ export const installSheet = (
   //    update). The kernel's `f` slot is intentionally unlocked.
   hydrate(state, [], [new Map([["f", infixFormula]])]);
 
-  // 2) Build the sheet's three segments (controls + default user
-  //    sheet + the math function library) and hydrate them in one
-  //    call. The lambdas for the render tree + action handlers travel
-  //    with the controls manifest; user-cell and fn-library segments
-  //    are lambda-free (their cels carry their fn in `v`).
+  // 2) Build all sheet segments (controls + one per user sheet + the
+  //    math function library) and hydrate them in one call. The
+  //    lambdas for the render tree + action handlers travel with the
+  //    controls manifest; user-sheet segments and the fn library are
+  //    lambda-free (their cels carry their fns in `v`).
+  //
+  //    Each user sheet derives its own manifest from the segment key
+  //    (`sheet:<Name>`), so per-sheet flush / dehydrate hits exactly
+  //    the right cells. See notes/todo.md Phase 3 §3 for the design.
   const sheet = buildSheetSegment();
   const fnMath = buildFnMathSegment();
+  const userSheetSegments = sheet.userSheets.map((seg) => {
+    const name = seg.key.startsWith("sheet:") ? seg.key.slice("sheet:".length) : seg.key;
+    return { ...seg, manifest: userSheetManifestFor(name) };
+  });
   hydrate(
     state,
     [
-      { ...sheet.controls,  manifest: plastronSheetControlsManifest },
-      { ...sheet.userSheet, manifest: userSheetManifestFor(DEFAULT_SHEET_NAME) },
+      { ...sheet.controls, manifest: plastronSheetControlsManifest },
+      ...userSheetSegments,
       fnMath,
     ],
     [sheet.fns],

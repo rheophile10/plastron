@@ -1,6 +1,9 @@
 import type { CelTriple, DehydratedCel, Fn, State } from "../../../../plastron/src/index.js";
 import { COLS, ROWS, addressOf, parseAddress, rectFor } from "../domain/address.js";
-import { classifyInput } from "../domain/parse.js";
+import {
+  classifyInput, cellKeyFor, buildFormulaInputMap, DEFAULT_SHEET_NAME,
+} from "../domain/parse.js";
+import { infixFormula } from "../formula.js";
 import { buildTSV, parseTSV } from "../domain/tsv.js";
 
 /** Convert a `classifyInput` DehydratedCel into a CelTriple for
@@ -10,6 +13,11 @@ const dcToTriple = (dc: DehydratedCel): CelTriple =>
   dc.f !== undefined
     ? { f: dc.f, l: null }
     : { v: dc.v ?? "", f: null, l: null };
+
+/** Read the active user sheet from the controls cel. Falls back to
+ *  the default sheet so this works before installSheet completes. */
+const activeSheetOf = (state: State): string =>
+  (state.cels.get("__sheet:activeSheet")?.v as string | undefined) ?? DEFAULT_SHEET_NAME;
 
 // ============================================================================
 // Clipboard actions — copy / cut / paste / clear, plus the marching-
@@ -26,7 +34,8 @@ export interface CopyMark {
 }
 
 const cellClipboardValue = (state: State, addr: string): string => {
-  const v = state.cels.get(addr)?.v;
+  const sheet = activeSheetOf(state);
+  const v = state.cels.get(cellKeyFor(sheet, addr))?.v;
   if (v === null || v === undefined) return "";
   if (typeof v === "number") return String(v);
   return String(v);
@@ -90,10 +99,14 @@ export const pasteFromClipboard = async (
 
   const rows = parseTSV(text);
 
+  const sheet = activeSheetOf(state);
   const sources = (state.cels.get("__sheet:sources")?.v as Record<string, string>) ?? {};
   const nextSources: Record<string, string> = { ...sources };
   const triples: Record<string, CelTriple> = {};
   const pasteAddrs = new Set<string>();
+  // Track formula-cel inputMap updates — CelTriple doesn't carry
+  // inputMap today, so we apply them out-of-band before the cascade.
+  const formulaInputMapPatches: Array<[string, Record<string, string>]> = [];
 
   for (let dr = 0; dr < rows.length; dr++) {
     const row = rows[dr]!;
@@ -103,7 +116,13 @@ export const pasteFromClipboard = async (
       if (c >= COLS || r >= ROWS) continue;
       const addr = addressOf(c, r);
       pasteAddrs.add(addr);
-      triples[addr] = dcToTriple(classifyInput(addr, row[dc]!.trim(), nextSources));
+      const key = cellKeyFor(sheet, addr);
+      const cd = classifyInput(addr, row[dc]!.trim(), nextSources, sheet);
+      triples[key] = dcToTriple(cd);
+      if (cd.f !== undefined) {
+        const deps = infixFormula.extractDeps?.(cd.f) ?? [];
+        formulaInputMapPatches.push([key, buildFormulaInputMap(sheet, deps)]);
+      }
     }
   }
   if (Object.keys(triples).length === 0) return false;
@@ -118,7 +137,7 @@ export const pasteFromClipboard = async (
         for (let c = cutRect.c0; c <= cutRect.c1; c++) {
           const addr = addressOf(c, r);
           if (pasteAddrs.has(addr)) continue;
-          triples[addr] = { v: "", f: null, l: null };
+          triples[cellKeyFor(sheet, addr)] = { v: "", f: null, l: null };
           delete nextSources[addr];
         }
       }
@@ -139,6 +158,13 @@ export const pasteFromClipboard = async (
     triples["__sheet:selectionEnd"] = { v: addressOf(lastC, lastR) };
   }
 
+  // Apply formula-cel inputMap rewrites out-of-band before the cascade
+  // (CelTriple doesn't carry inputMap today; followup to extend it).
+  for (const [key, im] of formulaInputMapPatches) {
+    const cel = state.cels.get(key);
+    if (cel) cel.inputMap = im;
+  }
+
   const setCelBatch = state.fns.get("setCelBatch") as Fn;
   await setCelBatch(state, triples);
   return true;
@@ -154,13 +180,14 @@ export const clearSelection: Fn = async (...args: unknown[]) => {
   const rect = rectFor(start, end || start);
   if (!rect) return;
 
+  const sheet = activeSheetOf(state);
   const sources = (state.cels.get("__sheet:sources")?.v as Record<string, string>) ?? {};
   const nextSources: Record<string, string> = { ...sources };
   const triples: Record<string, CelTriple> = {};
   for (let r = rect.r0; r <= rect.r1; r++) {
     for (let c = rect.c0; c <= rect.c1; c++) {
       const addr = addressOf(c, r);
-      triples[addr] = { v: "", f: null, l: null };
+      triples[cellKeyFor(sheet, addr)] = { v: "", f: null, l: null };
       delete nextSources[addr];
     }
   }

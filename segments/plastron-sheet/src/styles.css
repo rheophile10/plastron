@@ -23,6 +23,40 @@ body {
   padding: 16px;
 }
 
+/* ─── tabs ──────────────────────────────────────────────────────── */
+
+.sheet-tabs {
+  display: flex;
+  gap: 2px;
+  border-bottom: 1px solid #c8c8c8;
+  margin: 0 0 4px;
+}
+
+.sheet-tab {
+  appearance: none;
+  border: 1px solid transparent;
+  border-bottom: none;
+  background: transparent;
+  padding: 4px 14px;
+  cursor: pointer;
+  font: inherit;
+  color: #555;
+  border-radius: 4px 4px 0 0;
+  margin-bottom: -1px;
+}
+
+.sheet-tab:hover {
+  background: #f0f0f0;
+  color: #000;
+}
+
+.sheet-tab.active {
+  background: #fff;
+  border-color: #c8c8c8;
+  color: #000;
+  font-weight: 500;
+}
+
 /* ─── toolbar / formula bar ─────────────────────────────────────── */
 
 .sheet {

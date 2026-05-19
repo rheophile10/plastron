@@ -1,6 +1,14 @@
 import type { CelTriple, DehydratedCel, Fn, State } from "../../../../plastron/src/index.js";
-import { classifyInput } from "../domain/parse.js";
+import {
+  classifyInput, cellKeyFor, buildFormulaInputMap, DEFAULT_SHEET_NAME,
+} from "../domain/parse.js";
+import { infixFormula } from "../formula.js";
 import { moveSelection } from "./selection.js";
+
+/** Read the active user sheet from the controls cel. Falls back to
+ *  the default sheet so this works before installSheet completes. */
+const activeSheetOf = (state: State): string =>
+  (state.cels.get("__sheet:activeSheet")?.v as string | undefined) ?? DEFAULT_SHEET_NAME;
 
 /** Convert the output of `classifyInput` into a CelTriple suitable for
  *  setCelBatch. Either path explicitly clears the other compute fields
@@ -59,17 +67,34 @@ export const typeIntoSelected: Fn = async (...args: unknown[]) => {
 const commitFromInput = async (state: State, addr: string, raw: string): Promise<void> => {
   const trimmed = raw.trim();
   const setCelBatch = state.fns.get("setCelBatch") as Fn;
+  const sheet = activeSheetOf(state);
+  const cellKey = cellKeyFor(sheet, addr);
 
   const sources = (state.cels.get("__sheet:sources")?.v as Record<string, string>) ?? {};
   const nextSources: Record<string, string> = { ...sources };
-  const dc = classifyInput(addr, trimmed, nextSources);
+  const dc = classifyInput(addr, trimmed, nextSources, sheet);
+
+  // If the cel is becoming a formula, re-derive its inputMap from the
+  // new formula source so dep references resolve to the right
+  // sheet-scoped cel keys. CelTriple doesn't carry inputMap today,
+  // so we mutate cel.inputMap in place BEFORE the setCelBatch cascade
+  // (the kernel reads inputMap when evaluating, not when applying the
+  // triple). Tracked as a kernel followup: extend CelTriple to
+  // include inputMap so this isn't an out-of-band write.
+  if (dc.f !== undefined) {
+    const cel = state.cels.get(cellKey);
+    if (cel) {
+      const deps = infixFormula.extractDeps?.(dc.f) ?? [];
+      cel.inputMap = buildFormulaInputMap(sheet, deps);
+    }
+  }
 
   // One atomic write: cel role change + sources update + clear edit
   // state. setCelBatch fires a single cascade over the union of all
   // affected keys — was previously hydrate → runCycle → set → batch
   // (3+ cascades) per commit. Cookbook §3b + §13.
   await setCelBatch(state, {
-    [addr]:              dcToTriple(dc),
+    [cellKey]:           dcToTriple(dc),
     "__sheet:sources":   { v: nextSources },
     "__sheet:editing":   { v: "" },
     "__sheet:editSeed":  { v: "" },

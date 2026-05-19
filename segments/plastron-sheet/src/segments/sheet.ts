@@ -3,9 +3,11 @@ import type {
 } from "../../../../plastron/src/index.js";
 import { allAddresses } from "../domain/address.js";
 import {
-  SHEET_SEGMENT, SHEET_CONTROLS_SEGMENT, DEFAULT_SHEET_NAME,
+  SHEET_CONTROLS_SEGMENT, DEFAULT_SHEET_NAME, cellKeyFor, sheetSegmentFor,
 } from "../domain/parse.js";
 import { renderApp } from "../render/app.js";
+import { infixFormula } from "../formula.js";
+import { buildFormulaInputMap } from "../domain/parse.js";
 import { mouseDown, mouseEnter, moveSelection } from "../actions/selection.js";
 import {
   edit, editKeyDown, editBlur, typeIntoSelected,
@@ -22,20 +24,18 @@ import {
 // propagate through the cascade.
 // ============================================================================
 
-// Pre-filled sheet — values + formulas for a one-glance demo on first
-// load.
-const SEED: Record<string, { v?: unknown; f?: string }> = {
+type SheetSeed = Record<string, { v?: unknown; f?: string }>;
+
+// Sheet1 — the ledger demo. Exercises arithmetic + SUM/ROUND/MIN/MAX/AVG/COUNT.
+const SHEET1_SEED: SheetSeed = {
   A1: { v: "Item" },        B1: { v: "Qty" },   C1: { v: "Price" }, D1: { v: "Total" },
   A2: { v: "Bone, ox" },    B2: { v: 12 },      C2: { v: 4 },       D2: { f: "B2*C2" },
   A3: { v: "Plastron" },    B3: { v: 3 },       C3: { v: 17 },      D3: { f: "B3*C3" },
   A4: { v: "Charcoal" },    B4: { v: 30 },      C4: { v: 0.5 },     D4: { f: "B4*C4" },
   A5: { v: "Bronze pin" },  B5: { v: 8 },       C5: { v: 2.25 },    D5: { f: "B5*C5" },
-  // Subtotal / tax / grand total — exercise the math function library
-  // (sheet:fn:math) hydrated alongside the sheet. SUM/ROUND demoed.
   A7: { v: "Subtotal" },                                              D7: { f: "SUM(D2:D5)" },
   A8: { v: "Tax (10%)" },                                             D8: { f: "ROUND(D7*0.1, 2)" },
   A9: { v: "Grand total" },                                           D9: { f: "D7+D8" },
-  // Row-level stats sidebar — MIN/MAX/AVG/COUNT over the price column.
   F1: { v: "Stats" },
   F2: { v: "min price" },   G2: { f: "MIN(C2:C5)" },
   F3: { v: "max price" },   G3: { f: "MAX(C2:C5)" },
@@ -43,9 +43,32 @@ const SEED: Record<string, { v?: unknown; f?: string }> = {
   F5: { v: "rows" },        G5: { f: "COUNT(B2:B5)" },
 };
 
+// Sheet2 — a minimal scratch sheet to demonstrate the multi-sheet UI.
+// Crucially, the formula in B3 references Sheet2's own B2 — sheet
+// formulas are intra-sheet by default (cross-sheet refs are a future
+// step that needs `Sheet1!A1`-style parser support).
+const SHEET2_SEED: SheetSeed = {
+  A1: { v: "Scratch" },
+  A2: { v: "x" },                B2: { v: 42 },
+  A3: { v: "2x" },               B3: { f: "B2*2" },
+  A4: { v: "x²" },               B4: { f: "POW(B2, 2)" },
+  A5: { v: "rounded √x" },       B5: { f: "ROUND(SQRT(B2), 3)" },
+};
+
+const SHEETS: ReadonlyArray<{ name: string; seed: SheetSeed }> = [
+  { name: "Sheet1", seed: SHEET1_SEED },
+  { name: "Sheet2", seed: SHEET2_SEED },
+];
+
 const collectInitialSources = (): Record<string, string> => {
+  // The sources side-table is a per-sheet view today (it's keyed by
+  // bare addr — multiple sheets would collide). For multi-sheet, the
+  // sources cel will become per-active-sheet at edit time; for now,
+  // seed with the active sheet's formulas (Sheet1 — DEFAULT_SHEET_NAME).
   const out: Record<string, string> = {};
-  for (const [addr, seed] of Object.entries(SEED)) {
+  const defaultSheet = SHEETS.find((s) => s.name === DEFAULT_SHEET_NAME);
+  if (!defaultSheet) return out;
+  for (const [addr, seed] of Object.entries(defaultSheet.seed)) {
     if (seed.f !== undefined) out[addr] = seed.f;
   }
   return out;
@@ -53,13 +76,13 @@ const collectInitialSources = (): Record<string, string> => {
 
 export interface BuiltSheetSegments {
   /** Workbook-level cels: __sheet:* control cels + appTree render +
-   *  (later) activeSheet + sentinel. Lives at segment="sheet:controls"
-   *  and persists across user-sheet add/remove. */
+   *  activeSheet + userSheets registry + sentinel. Lives at
+   *  segment="sheet:controls" and persists across user-sheet
+   *  add/remove. */
   controls: Segment;
-  /** A single user sheet's cell cels. Lives at segment="sheet:Sheet1"
-   *  (default). Phase 3 step 3 generalizes this to one segment per
-   *  user sheet. */
-  userSheet: Segment;
+  /** One Segment per user sheet, in display order. Each lives at
+   *  segment="sheet:<Name>" and carries that sheet's cell cels. */
+  userSheets: Segment[];
   /** Lambdas referenced by the segments above. Hydrate registers
    *  these into state.fns alongside the cels. */
   fns: Map<LambdaKey, Fn>;
@@ -74,29 +97,46 @@ export const buildSheetSegment = (): BuiltSheetSegments => {
     { key: "__sheet:editSeed",     v: "",                          segment: SHEET_CONTROLS_SEGMENT },
     { key: "__sheet:sources",      v: collectInitialSources(),     segment: SHEET_CONTROLS_SEGMENT },
     { key: "__sheet:copyMark",     v: null,                        segment: SHEET_CONTROLS_SEGMENT },
-    // Phase 3 foundation: the active user sheet. Multi-sheet step
-    // adds tabs that write to this cel; today it's a constant
-    // pointing at the single user sheet.
+    // The active user sheet — tabs read this to know which to
+    // highlight; the grid/toolbar read it to know which cells to
+    // display. Tabs write to it on click.
     { key: "__sheet:activeSheet",  v: DEFAULT_SHEET_NAME,          segment: SHEET_CONTROLS_SEGMENT },
+    // The list of user-sheet names in display order. The tab bar
+    // reads this to emit one tab per entry. Adding/removing a sheet
+    // is a write to this cel (plus a hydrate / flush of the
+    // corresponding `sheet:<Name>` segment).
+    { key: "__sheet:userSheets",   v: SHEETS.map((s) => s.name),   segment: SHEET_CONTROLS_SEGMENT },
   ];
 
-  // ── User-sheet segment: the cell cels A1..H12 ───────────────────────────
-  const userCels: DehydratedCel[] = [];
-  for (const addr of allAddresses()) {
-    const seed = SEED[addr];
-    if (seed?.f !== undefined) {
-      userCels.push({ key: addr, f: seed.f, segment: SHEET_SEGMENT });
-    } else {
-      userCels.push({ key: addr, v: seed?.v ?? "", segment: SHEET_SEGMENT });
+  // ── One Segment per user sheet ──────────────────────────────────────────
+  // Cell keys are namespaced (Sheet1:A1) so multiple user sheets can
+  // hold the same bare addresses without colliding in state.cels.
+  // Formula cels carry an explicit `inputMap` so deps resolve to the
+  // right sheet-scoped keys without going through the kernel's
+  // auto-wire (which would look for unprefixed "B2" and find nothing).
+  const userSheets: Segment[] = SHEETS.map((sh) => {
+    const cels: DehydratedCel[] = [];
+    const segment = sheetSegmentFor(sh.name);
+    for (const addr of allAddresses()) {
+      const seed = sh.seed[addr];
+      const key = cellKeyFor(sh.name, addr);
+      if (seed?.f !== undefined) {
+        const deps = infixFormula.extractDeps?.(seed.f) ?? [];
+        const inputMap = buildFormulaInputMap(sh.name, deps);
+        cels.push({ key, f: seed.f, segment, inputMap });
+      } else {
+        cels.push({ key, v: seed?.v ?? "", segment });
+      }
     }
-  }
+    return { key: segment, cels };
+  });
 
-  // ── appTree render cel lives in CONTROLS (it composes per-sheet
-  //    cells but is itself workbook-scoped — there's only one). The
-  //    inputMap still points at the cell cel keys directly: cel keys
-  //    are flat across state.cels, so "A1" resolves regardless of
-  //    which segment owns it. When step 3 introduces namespaced keys
-  //    (Sheet1:A1), this inputMap gets rebuilt accordingly. ────────────
+  // ── appTree inputMap — control cels (bare keys) + every sheet's
+  //    cells under sheet-prefixed input names. The render lambda
+  //    reads control cels via bare keys (`inputs.__sheet:editing`)
+  //    and per-sheet cells via `${sheet}!${addr}` style lookup
+  //    (`inputs["Sheet1!A1"]`). renderApp narrows to the active
+  //    sheet at render time. ────────────────────────────────────────
   const inputMap: Record<string, string> = {
     "__sheet:selected":     "__sheet:selected",
     "__sheet:selectionEnd": "__sheet:selectionEnd",
@@ -104,8 +144,14 @@ export const buildSheetSegment = (): BuiltSheetSegments => {
     "__sheet:editSeed":     "__sheet:editSeed",
     "__sheet:sources":      "__sheet:sources",
     "__sheet:copyMark":     "__sheet:copyMark",
+    "__sheet:activeSheet":  "__sheet:activeSheet",
+    "__sheet:userSheets":   "__sheet:userSheets",
   };
-  for (const addr of allAddresses()) inputMap[addr] = addr;
+  for (const sh of SHEETS) {
+    for (const addr of allAddresses()) {
+      inputMap[`${sh.name}!${addr}`] = cellKeyFor(sh.name, addr);
+    }
+  }
 
   controlCels.push({
     key: "appTree",
@@ -129,8 +175,8 @@ export const buildSheetSegment = (): BuiltSheetSegments => {
   ]);
 
   return {
-    controls:  { key: SHEET_CONTROLS_SEGMENT, cels: controlCels },
-    userSheet: { key: SHEET_SEGMENT,          cels: userCels    },
+    controls: { key: SHEET_CONTROLS_SEGMENT, cels: controlCels },
+    userSheets,
     fns,
   };
 };
