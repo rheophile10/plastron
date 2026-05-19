@@ -1,0 +1,17 @@
+{
+  "name": "plastron-multiplane",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Multiplane-camera renderer for plastron-canvas. Schemas for Drawing / Layer / Scene + a render lambda that composites z-ordered layers with classic Disney-CAPS-style parallax. B2 segment — no channel of its own; composes with plastron-canvas.",
+  "main": "src/index.ts",
+  "scripts": {
+    "check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "zod": "^4.3.6"
+  },
+  "devDependencies": {
+    "typescript": "~5.9.3"
+  }
+}
