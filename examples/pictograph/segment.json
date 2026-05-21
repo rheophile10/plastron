@@ -1,0 +1,37 @@
+{
+  "key": "象形",
+  "manifest": {
+    "segment": "象形",
+    "version": "0.0.1",
+    "description": [
+      "Functions live as cels with tag='fn'; main.ts materializes them into",
+      "real fns at load. Formulas call those fns positionally — emoji symbols",
+      "are auto-wired into inputMap by the formula compiler. No fnMetaData,",
+      "no apply lambda, no icon value cels (icons are string literals in the",
+      "formulas)."
+    ],
+    "provides": {
+      "celSegments": ["象形"]
+    }
+  },
+  "cels": [
+    { "key": "👤fn", "tag": "fn", "segment": "象形",
+      "v": [
+        "() => {",
+        "  class P {",
+        "    constructor({ icon }) { this.icon = icon; }",
+        "    ['👋'](other) { return this.icon + '👋' + other.icon; }",
+        "  }",
+        "  return P;",
+        "}"
+      ]
+    },
+    { "key": "🏭",   "tag": "fn", "v": "(Cls, icon) => new Cls({ icon })", "segment": "象形" },
+    { "key": "👋fn", "tag": "fn", "v": "(self, other) => self['👋'](other)", "segment": "象形" },
+
+    { "key": "👤",      "f": "(👤fn)",            "segment": "象形" },
+    { "key": "👦",      "f": "(🏭 👤 \"👦\")",     "segment": "象形" },
+    { "key": "👧",      "f": "(🏭 👤 \"👧\")",     "segment": "象形" },
+    { "key": "👦👋👧", "f": "(👋fn 👦 👧)",       "segment": "象形" }
+  ]
+}

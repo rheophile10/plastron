@@ -1,0 +1,16 @@
+{
+  "name": "pictograph-example",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Read a dehydrated JSON segment, hydrate it, runCycle, write the result to out.json. No deps beyond plastron core.",
+  "scripts": {
+    "start": "tsx main.ts",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^25.6.2",
+    "tsx": "^4.19.2",
+    "typescript": "~5.9.3"
+  }
+}
