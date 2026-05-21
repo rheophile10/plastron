@@ -26,8 +26,8 @@ import { createInitialState, precomputeOptional } from "../../plastron/src/index
 // there are segments that already handle archiving but for now we use this. 
 
 const here = dirname(fileURLToPath(import.meta.url));
-const segmentPath = resolve(here, "segment.json");
-const outPath     = resolve(here, "out.json");
+const segmentPath = resolve(here, "龜甲.json");
+const outPath     = resolve(here, "甲骨.json");
 
 const joinLines = (v: unknown): string | undefined =>
   Array.isArray(v) ? v.join("\n") : (typeof v === "string" ? v : undefined);
@@ -54,7 +54,11 @@ await precomputeOptional(龜甲);
 await (龜甲.fns.get("runCycle") as Fn)(龜甲);
 
 const 甲骨 = (龜甲.fns.get("dehydrate") as Fn)(龜甲) as Segment[];
-await writeFile(outPath, JSON.stringify(甲骨, null, 2) + "\n", "utf8");
+// Functions (live fn cels, class values) round-trip as their .toString()
+// source; without this they collapse to undefined and the cel loses v.
+const fnReplacer = (_k: string, v: unknown): unknown =>
+  typeof v === "function" ? v.toString() : v;
+await writeFile(outPath, JSON.stringify(甲骨, fnReplacer, 2) + "\n", "utf8");
 
 const pict = 甲骨.find((s) => s.key === "象形");
 const view = (key: string): unknown =>
