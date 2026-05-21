@@ -3,6 +3,10 @@ import { PLASTRON_DOM_SEGMENT } from "../../plastron-dom/src/index.js";
 import { infixFormula } from "./formula.js";
 import { buildSheetSegment } from "./segments/sheet.js";
 import { buildFnMathSegment } from "./segments/fnMath.js";
+import { buildFnTextSegment }  from "./segments/fnText.js";
+import { buildFnLogicSegment } from "./segments/fnLogic.js";
+import { buildFnStatsSegment } from "./segments/fnStats.js";
+import { buildFnDateSegment }  from "./segments/fnDate.js";
 import { stopDragging } from "./actions/selection.js";
 import { installKeyboardBridge } from "./bridges/keyboard.js";
 import { installClipboardBridge } from "./bridges/clipboard.js";
@@ -155,17 +159,23 @@ export const installSheet = (
   //    (`sheet:<Name>`), so per-sheet flush / dehydrate hits exactly
   //    the right cells. See notes/todo.md Phase 3 §3 for the design.
   const sheet = buildSheetSegment();
-  const fnMath = buildFnMathSegment();
   const userSheetSegments = sheet.userSheets.map((seg) => {
     const name = seg.key.startsWith("sheet:") ? seg.key.slice("sheet:".length) : seg.key;
     return { ...seg, manifest: userSheetManifestFor(name) };
   });
+  const fnLibraries = [
+    buildFnMathSegment(),
+    buildFnTextSegment(),
+    buildFnLogicSegment(),
+    buildFnStatsSegment(),
+    buildFnDateSegment(),
+  ];
   hydrate(
     state,
     [
       { ...sheet.controls, manifest: plastronSheetControlsManifest },
       ...userSheetSegments,
-      fnMath,
+      ...fnLibraries,
     ],
     [sheet.fns],
   );

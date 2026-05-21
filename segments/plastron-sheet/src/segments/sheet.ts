@@ -43,16 +43,45 @@ const SHEET1_SEED: SheetSeed = {
   F5: { v: "rows" },        G5: { f: "COUNT(B2:B5)" },
 };
 
-// Sheet2 — a minimal scratch sheet to demonstrate the multi-sheet UI.
-// Crucially, the formula in B3 references Sheet2's own B2 — sheet
-// formulas are intra-sheet by default (cross-sheet refs are a future
-// step that needs `Sheet1!A1`-style parser support).
+// Sheet2 — a function-library tour. Each row exercises one of the
+// fn:* segments hydrated alongside the sheet. Multi-sheet means
+// these formulas can sit alongside Sheet1's inventory ledger without
+// either polluting the other's cell namespace.
+//
+// Formulas are intra-sheet — they reference Sheet2's own cells.
+// Cross-sheet refs (`=Sheet1!D9`) are a follow-up that needs
+// `IDENT!cellref` parser support.
 const SHEET2_SEED: SheetSeed = {
-  A1: { v: "Scratch" },
+  A1: { v: "Function tour" },
+  // math (already in Sheet1; keep one example here for completeness)
   A2: { v: "x" },                B2: { v: 42 },
-  A3: { v: "2x" },               B3: { f: "B2*2" },
-  A4: { v: "x²" },               B4: { f: "POW(B2, 2)" },
-  A5: { v: "rounded √x" },       B5: { f: "ROUND(SQRT(B2), 3)" },
+  A3: { v: "x²" },               B3: { f: "POW(B2, 2)" },
+  A4: { v: "√x rounded" },       B4: { f: "ROUND(SQRT(B2), 3)" },
+
+  // text — uses fn:CONCAT / LEFT / UPPER / LEN / SUBSTITUTE / REPT
+  A6: { v: "—text—" },
+  A7: { v: "greeting" },         B7: { v: "Hello, World" },
+  A8: { v: "upper" },            B8: { f: "UPPER(B7)" },
+  A9: { v: "first 5" },          B9: { f: "LEFT(B7, 5)" },
+  A10: { v: "length" },          B10: { f: "LEN(B7)" },
+  A11: { v: "replace" },         B11: { f: "SUBSTITUTE(B7, \"World\", \"Plastron\")" },
+  A12: { v: "concat" },          B12: { f: "CONCAT(B8, \" — \", B11)" },
+
+  // logic — uses fn:IF / IFERROR
+  D1: { v: "—logic—" },
+  D2: { v: "x>10" },             E2: { f: "IF(B2>10, \"big\", \"small\")" },
+  D3: { v: "x even" },           E3: { f: "IF(B2 - ROUND(B2/2, 0)*2, \"odd\", \"even\")" },
+  D4: { v: "safe div" },         E4: { f: "IFERROR(B2/0, \"divz\")" },
+
+  // stats — uses fn:STDEV / MEDIAN / RANK over the existing math col
+  D6: { v: "—stats—" },
+  D7: { v: "stdev(B2:B4)" },     E7: { f: "ROUND(STDEV(B2, B3, B4), 2)" },
+  D8: { v: "median" },           E8: { f: "MEDIAN(B2, B3, B4)" },
+
+  // date — uses fn:TODAY / YEAR
+  D10: { v: "—date—" },
+  D11: { v: "today" },           E11: { f: "TODAY()" },
+  D12: { v: "year"  },           E12: { f: "YEAR(E11)" },
 };
 
 const SHEETS: ReadonlyArray<{ name: string; seed: SheetSeed }> = [

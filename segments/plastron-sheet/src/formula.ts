@@ -35,11 +35,13 @@ import { addressOf, parseAddress } from "./domain/address.js";
 
 type Ast =
   | { kind: "num"; v: number }
+  | { kind: "str"; v: string }
   | { kind: "ref"; key: Key }
   | { kind: "range"; cells: Key[] }
   | { kind: "call"; fnKey: Key; args: Ast[] }
   | { kind: "neg"; arg: Ast }
-  | { kind: "op"; op: "+" | "-" | "*" | "/"; l: Ast; r: Ast };
+  | { kind: "op";  op: "+" | "-" | "*" | "/"; l: Ast; r: Ast }
+  | { kind: "cmp"; op: ">" | "<" | "=" | "<>" | ">=" | "<="; l: Ast; r: Ast };
 
 const enumerateRange = (from: string, to: string): Key[] => {
   const a = parseAddress(from);
@@ -60,7 +62,31 @@ const tokenize = (src: string): string[] => {
   while (i < src.length) {
     const c = src[i]!;
     if (c === " " || c === "\t" || c === "\n") { i++; continue; }
-    if ("+-*/(),:".includes(c)) { out.push(c); i++; continue; }
+    // String literal: "..." with \" and \\ escapes. The full quoted
+    // form is kept as the token so the parser can recognize it.
+    if (c === '"') {
+      let j = i + 1;
+      let raw = '"';
+      while (j < src.length) {
+        const cc = src[j]!;
+        if (cc === "\\" && j + 1 < src.length) { raw += cc + src[j + 1]!; j += 2; continue; }
+        raw += cc;
+        j++;
+        if (cc === '"') break;
+      }
+      if (raw.length < 2 || raw[raw.length - 1] !== '"') {
+        throw new Error(`Unterminated string in formula "${src}"`);
+      }
+      out.push(raw);
+      i = j;
+      continue;
+    }
+    // Two-char comparison operators come BEFORE the single-char punct
+    // branch so >=, <=, <> tokenize whole.
+    if (c === ">" && src[i + 1] === "=") { out.push(">="); i += 2; continue; }
+    if (c === "<" && src[i + 1] === "=") { out.push("<="); i += 2; continue; }
+    if (c === "<" && src[i + 1] === ">") { out.push("<>"); i += 2; continue; }
+    if ("+-*/(),:><=".includes(c)) { out.push(c); i++; continue; }
     if (/[0-9.]/.test(c)) {
       let j = i;
       while (j < src.length && /[0-9.]/.test(src[j]!)) j++;
@@ -81,11 +107,27 @@ const tokenize = (src: string): string[] => {
   return out;
 };
 
+const CMP_OPS = new Set([">", "<", "=", "<>", ">=", "<="]);
+
 const parse = (src: string): Ast => {
   const stripped = src.startsWith("=") ? src.slice(1) : src;
   const tokens = tokenize(stripped);
   if (tokens.length === 0) throw new Error(`Empty formula "${src}"`);
   let pos = 0;
+
+  // cmp → expr (CMPOP expr)? — single comparison; not chainable. The
+  // result is a boolean; passing it into arithmetic coerces via toN
+  // (false → 0, true → 1) — same convention as Excel.
+  const cmp = (): Ast => {
+    const left = expr();
+    const t = tokens[pos];
+    if (t !== undefined && CMP_OPS.has(t)) {
+      pos++;
+      const right = expr();
+      return { kind: "cmp", op: t as ">" | "<" | "=" | "<>" | ">=" | "<=", l: left, r: right };
+    }
+    return left;
+  };
 
   const expr = (): Ast => {
     let left = term();
@@ -108,8 +150,10 @@ const parse = (src: string): Ast => {
   const parseArgs = (): Ast[] => {
     const args: Ast[] = [];
     if (tokens[pos] === ")") return args;
-    args.push(expr());
-    while (tokens[pos] === ",") { pos++; args.push(expr()); }
+    // Function args allow comparisons (e.g. IF(B2 > 10, ...)), so
+    // they parse at the `cmp` level, not just `expr`.
+    args.push(cmp());
+    while (tokens[pos] === ",") { pos++; args.push(cmp()); }
     return args;
   };
 
@@ -119,12 +163,20 @@ const parse = (src: string): Ast => {
     if (t === "-") { pos++; return { kind: "neg", arg: factor() }; }
     if (t === "(") {
       pos++;
-      const e = expr();
+      // Parens allow comparisons too — `(a > b) * 2` should compile.
+      const e = cmp();
       if (tokens[pos] !== ")") throw new Error(`Missing ")" in formula "${src}"`);
       pos++;
       return e;
     }
     if (/^-?[0-9]+(\.[0-9]+)?$/.test(t)) { pos++; return { kind: "num", v: Number(t) }; }
+    // String literal: token starts with `"`. Strip quotes + unescape.
+    if (t.length >= 2 && t[0] === '"' && t[t.length - 1] === '"') {
+      pos++;
+      const raw = t.slice(1, -1);
+      const unescaped = raw.replace(/\\(["\\])/g, "$1");
+      return { kind: "str", v: unescaped };
+    }
 
     // Cell ref or range or call (cell-ref-shaped identifier followed
     // by `(`). Excel allows `MAX1` as both a cell ref AND a function
@@ -164,7 +216,7 @@ const parse = (src: string): Ast => {
     throw new Error(`Unexpected token "${t}" in formula "${src}"`);
   };
 
-  const ast = expr();
+  const ast = cmp();
   if (pos < tokens.length) throw new Error(`Trailing input in formula "${src}"`);
   return ast;
 };
@@ -179,9 +231,43 @@ const toNumber = (v: unknown): number => {
   return Number.isFinite(n) ? n : 0;
 };
 
+/** Compare two operands Excel-style: both numeric → numeric compare;
+ *  both string → lexicographic compare; mixed → coerce string to
+ *  number where possible, otherwise lexicographic. */
+const compare = (l: unknown, r: unknown, op: ">" | "<" | "=" | "<>" | ">=" | "<="): boolean => {
+  const bothNum = typeof l === "number" && typeof r === "number";
+  let cmpResult: number;
+  if (bothNum) {
+    cmpResult = (l as number) < (r as number) ? -1 : (l as number) > (r as number) ? 1 : 0;
+  } else {
+    // Coerce both to string for compare. Boolean/null/undefined fall
+    // through cleanly via String().
+    const ls = l === null || l === undefined ? "" : String(l);
+    const rs = r === null || r === undefined ? "" : String(r);
+    // If both are number-shaped strings, compare as numbers (matches
+    // Excel's coercion for `"3" > "10"` → false).
+    const ln = Number(ls);
+    const rn = Number(rs);
+    if (Number.isFinite(ln) && Number.isFinite(rn) && ls !== "" && rs !== "") {
+      cmpResult = ln < rn ? -1 : ln > rn ? 1 : 0;
+    } else {
+      cmpResult = ls < rs ? -1 : ls > rs ? 1 : 0;
+    }
+  }
+  switch (op) {
+    case ">":  return cmpResult > 0;
+    case "<":  return cmpResult < 0;
+    case "=":  return cmpResult === 0;
+    case "<>": return cmpResult !== 0;
+    case ">=": return cmpResult >= 0;
+    case "<=": return cmpResult <= 0;
+  }
+};
+
 const evaluate = (ast: Ast, inputs: Record<string, unknown>): unknown => {
   switch (ast.kind) {
     case "num": return ast.v;
+    case "str": return ast.v;
     case "ref": return inputs[ast.key];
     case "range": {
       // Materialize the range into a JS array of cel values. Function
@@ -210,17 +296,22 @@ const evaluate = (ast: Ast, inputs: Record<string, unknown>): unknown => {
         case "/": return l / r;
       }
     }
+    case "cmp": {
+      return compare(evaluate(ast.l, inputs), evaluate(ast.r, inputs), ast.op);
+    }
   }
 };
 
 const collectRefs = (ast: Ast, into: Set<Key>): void => {
   switch (ast.kind) {
     case "num":   return;
+    case "str":   return;
     case "ref":   into.add(ast.key); return;
     case "range": for (const c of ast.cells) into.add(c); return;
     case "call":  into.add(ast.fnKey); for (const a of ast.args) collectRefs(a, into); return;
     case "neg":   collectRefs(ast.arg, into); return;
     case "op":    collectRefs(ast.l, into); collectRefs(ast.r, into); return;
+    case "cmp":   collectRefs(ast.l, into); collectRefs(ast.r, into); return;
   }
 };
 
