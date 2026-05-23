@@ -1,0 +1,410 @@
+{
+  "name": "js-common-schema",
+  "cels": [
+    {
+      "key": "string",
+      "celType": "SchemaCel",
+      "metadata": { "key": "string", "segment": "js-common-schema" },
+      "v": {
+        "key": "string",
+        "zod": { "type": "string" },
+        "protocols": {
+          "isChanged": "string_isChanged",
+          "hydrate": "string_hydrate",
+          "dehydrate": "string_dehydrate"
+        }
+      }
+    },
+    {
+      "key": "string_isChanged",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "string_isChanged", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "string_hydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "string_hydrate", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "string_dehydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "string_dehydrate", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+
+    {
+      "key": "number",
+      "celType": "SchemaCel",
+      "metadata": { "key": "number", "segment": "js-common-schema" },
+      "v": {
+        "key": "number",
+        "zod": { "type": "number" },
+        "protocols": {
+          "isChanged": "number_isChanged",
+          "hydrate": "number_hydrate",
+          "dehydrate": "number_dehydrate"
+        }
+      }
+    },
+    {
+      "key": "number_isChanged",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "number_isChanged", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "number_hydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "number_hydrate", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "number_dehydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "number_dehydrate", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+
+    {
+      "key": "boolean",
+      "celType": "SchemaCel",
+      "metadata": { "key": "boolean", "segment": "js-common-schema" },
+      "v": {
+        "key": "boolean",
+        "zod": { "type": "boolean" },
+        "protocols": {
+          "isChanged": "boolean_isChanged",
+          "hydrate": "boolean_hydrate",
+          "dehydrate": "boolean_dehydrate"
+        }
+      }
+    },
+    {
+      "key": "boolean_isChanged",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "boolean_isChanged", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "boolean_hydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "boolean_hydrate", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "boolean_dehydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "boolean_dehydrate", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+
+    {
+      "key": "bigint",
+      "celType": "SchemaCel",
+      "metadata": { "key": "bigint", "segment": "js-common-schema" },
+      "v": {
+        "key": "bigint",
+        "zod": { "type": "string", "pattern": "^-?[0-9]+$" },
+        "protocols": {
+          "isChanged": "bigint_isChanged",
+          "hydrate": "bigint_hydrate",
+          "dehydrate": "bigint_dehydrate"
+        }
+      }
+    },
+    {
+      "key": "bigint_isChanged",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "bigint_isChanged", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "bigint_hydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "bigint_hydrate", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "bigint_dehydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "bigint_dehydrate", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+
+    {
+      "key": "null",
+      "celType": "SchemaCel",
+      "metadata": { "key": "null", "segment": "js-common-schema" },
+      "v": {
+        "key": "null",
+        "zod": { "type": "null" },
+        "protocols": {
+          "isChanged": "null_isChanged",
+          "hydrate": "null_hydrate",
+          "dehydrate": "null_dehydrate"
+        }
+      }
+    },
+    {
+      "key": "null_isChanged",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "null_isChanged", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "null_hydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "null_hydrate", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "null_dehydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "null_dehydrate", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+
+    {
+      "key": "array",
+      "celType": "SchemaCel",
+      "metadata": { "key": "array", "segment": "js-common-schema" },
+      "v": {
+        "key": "array",
+        "zod": { "type": "array" },
+        "protocols": {
+          "isChanged": "array_isChanged",
+          "hydrate": "array_hydrate",
+          "dehydrate": "array_dehydrate"
+        }
+      }
+    },
+    {
+      "key": "array_isChanged",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "array_isChanged", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "array_hydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "array_hydrate", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "array_dehydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "array_dehydrate", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+
+    {
+      "key": "object",
+      "celType": "SchemaCel",
+      "metadata": { "key": "object", "segment": "js-common-schema" },
+      "v": {
+        "key": "object",
+        "zod": { "type": "object" },
+        "protocols": {
+          "isChanged": "object_isChanged",
+          "hydrate": "object_hydrate",
+          "dehydrate": "object_dehydrate"
+        }
+      }
+    },
+    {
+      "key": "object_isChanged",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "object_isChanged", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "object_hydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "object_hydrate", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "object_dehydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "object_dehydrate", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+
+    {
+      "key": "date",
+      "celType": "SchemaCel",
+      "metadata": { "key": "date", "segment": "js-common-schema" },
+      "v": {
+        "key": "date",
+        "zod": { "type": "string", "format": "date-time" },
+        "protocols": {
+          "isChanged": "date_isChanged",
+          "hydrate": "date_hydrate",
+          "dehydrate": "date_dehydrate"
+        }
+      }
+    },
+    {
+      "key": "date_isChanged",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "date_isChanged", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "date_hydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "date_hydrate", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "date_dehydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "date_dehydrate", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+
+    {
+      "key": "map",
+      "celType": "SchemaCel",
+      "metadata": { "key": "map", "segment": "js-common-schema" },
+      "v": {
+        "key": "map",
+        "zod": {
+          "type": "array",
+          "items": { "type": "array", "minItems": 2, "maxItems": 2 }
+        },
+        "protocols": {
+          "isChanged": "map_isChanged",
+          "hydrate": "map_hydrate",
+          "dehydrate": "map_dehydrate"
+        }
+      }
+    },
+    {
+      "key": "map_isChanged",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "map_isChanged", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "map_hydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "map_hydrate", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "map_dehydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "map_dehydrate", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+
+    {
+      "key": "set",
+      "celType": "SchemaCel",
+      "metadata": { "key": "set", "segment": "js-common-schema" },
+      "v": {
+        "key": "set",
+        "zod": { "type": "array", "uniqueItems": true },
+        "protocols": {
+          "isChanged": "set_isChanged",
+          "hydrate": "set_hydrate",
+          "dehydrate": "set_dehydrate"
+        }
+      }
+    },
+    {
+      "key": "set_isChanged",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "set_isChanged", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "set_hydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "set_hydrate", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "set_dehydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "set_dehydrate", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+
+    {
+      "key": "regexp",
+      "celType": "SchemaCel",
+      "metadata": { "key": "regexp", "segment": "js-common-schema" },
+      "v": {
+        "key": "regexp",
+        "zod": {
+          "type": "object",
+          "properties": {
+            "source": { "type": "string" },
+            "flags":  { "type": "string" }
+          },
+          "required": ["source", "flags"]
+        },
+        "protocols": {
+          "isChanged": "regexp_isChanged",
+          "hydrate": "regexp_hydrate",
+          "dehydrate": "regexp_dehydrate"
+        }
+      }
+    },
+    {
+      "key": "regexp_isChanged",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "regexp_isChanged", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "regexp_hydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "regexp_hydrate", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "regexp_dehydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "regexp_dehydrate", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+
+    {
+      "key": "uint8array",
+      "celType": "SchemaCel",
+      "metadata": { "key": "uint8array", "segment": "js-common-schema" },
+      "v": {
+        "key": "uint8array",
+        "zod": { "type": "string", "contentEncoding": "base64" },
+        "protocols": {
+          "isChanged": "uint8array_isChanged",
+          "hydrate": "uint8array_hydrate",
+          "dehydrate": "uint8array_dehydrate"
+        }
+      }
+    },
+    {
+      "key": "uint8array_isChanged",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "uint8array_isChanged", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "uint8array_hydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "uint8array_hydrate", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "uint8array_dehydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "uint8array_dehydrate", "segment": "js-common-schema", "kind": "native" },
+      "locked": true
+    }
+  ]
+}

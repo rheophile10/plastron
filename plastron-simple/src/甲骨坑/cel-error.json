@@ -1,0 +1,48 @@
+{
+  "name": "cel-error",
+  "cels": [
+    {
+      "key": "cel-error",
+      "celType": "SchemaCel",
+      "metadata": { "key": "cel-error", "segment": "cel-error" },
+      "v": {
+        "key": "cel-error",
+        "zod": {
+          "type": "object",
+          "required": ["kind", "at", "trap", "message"],
+          "properties": {
+            "kind":    { "type": "string", "const": "error" },
+            "at":      { "type": "array", "items": { "type": "string" } },
+            "trap":    { "type": "string" },
+            "message": { "type": "string" },
+            "stack":   { "type": "string" }
+          },
+          "additionalProperties": false
+        },
+        "protocols": {
+          "isChanged": "cel-error_isChanged",
+          "hydrate":   "cel-error_hydrate",
+          "dehydrate": "cel-error_dehydrate"
+        }
+      }
+    },
+    {
+      "key": "cel-error_isChanged",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "cel-error_isChanged", "segment": "cel-error", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "cel-error_hydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "cel-error_hydrate", "segment": "cel-error", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "cel-error_dehydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "cel-error_dehydrate", "segment": "cel-error", "kind": "native" },
+      "locked": true
+    }
+  ]
+}

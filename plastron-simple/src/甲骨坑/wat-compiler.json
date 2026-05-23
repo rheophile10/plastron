@@ -1,0 +1,78 @@
+{
+  "name": "wat-compiler",
+  "cels": [
+    {
+      "key": "wat",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "wat", "segment": "wat-compiler", "name": "wat", "kind": "native",
+        "description": "WAT compiler. Compiles WebAssembly text-format source to a runtime Fn via wabt.js + WebAssembly.instantiate. Wraps the module's main export (or its single function export) as a callable Fn. Gated on csp.wasm-available."
+      },
+      "locked": true
+    },
+    {
+      "key": "load-deps.wat",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "load-deps.wat", "segment": "wat-compiler", "schema": "boolean",
+        "description": "Bootstrap switch: should the wat runtime be loaded? Defaults true so the compiler is ready by hydrate. Apps that want lazy-load flip this false during boot."
+      },
+      "v": true
+    },
+    {
+      "key": "wat.ready",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "wat.ready", "segment": "wat-compiler", "schema": "boolean",
+        "description": "Runtime-ready sentinel. WAT runs main-thread so this is always true post-install; reserved for symmetry with worker-backed kinds (py, etc.) where boot is async."
+      },
+      "v": true
+    },
+    {
+      "key": "wat.alive",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "wat.alive", "segment": "wat-compiler", "schema": "boolean",
+        "description": "Catastrophic-death sentinel. Main-thread kinds never die, so trivially true. Worker-backed kinds flip this false on runtime crash."
+      },
+      "v": true
+    },
+    {
+      "key": "wat.errors",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "wat.errors", "segment": "wat-compiler", "schema": "array",
+        "description": "Append-only log of CelError values produced by wat lambdas. v1: empty array; runCycle does not populate it yet (errors live on the failed cel's v via trap-as-value). Reserved for diagnostic accumulation later."
+      },
+      "v": []
+    },
+
+    {
+      "key": "wat-to-js",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "wat-to-js", "segment": "wat-compiler", "name": "wat-to-js", "kind": "native",
+        "description": "Bridge: convert a wat-domain value to a JS-domain value. v1 scalars (i32/u32/f32/f64) are JS-equivalent on the wire, so this is identity. When composites (string, list, record, variant) and workers arrive, this becomes a real marshalling call into the wat worker's toJs protocol. Authors invoke via formula syntax: (wat-to-js someCel)."
+      },
+      "locked": true
+    },
+    {
+      "key": "js-to-wat",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "js-to-wat", "segment": "wat-compiler", "name": "js-to-wat", "kind": "native",
+        "description": "Bridge: convert a JS-domain value to a wat-domain value. v1 scalars are identity (the wat ABI accepts JS numbers directly via WebAssembly's coercion). Becomes a real marshalling call when composites and workers land. Authors invoke via formula syntax: (js-to-wat someCel)."
+      },
+      "locked": true
+    },
+    {
+      "key": "wasm-to-wat",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "wasm-to-wat", "segment": "wat-compiler", "name": "wasm-to-wat", "kind": "native",
+        "description": "Show-WAT diagnostic: takes a wasm binary (Uint8Array) and returns its WAT text via wabt.readWasm + toText. Use on cel._wasm to inspect any wasm module — most useful for kinds whose source isn't WAT (Javy / Rust). Wat lambdas can pass their own bytes for canonical round-trip."
+      },
+      "locked": true
+    }
+  ]
+}

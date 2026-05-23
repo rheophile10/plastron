@@ -1,0 +1,41 @@
+{
+  "name": "builtins",
+  "cels": [
+    {
+      "key": "+",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "+", "segment": "builtins", "name": "+", "kind": "native",
+        "description": "Variadic sum. Coerces args via Number(); 0 args → 0."
+      },
+      "locked": true
+    },
+    {
+      "key": "-",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "-", "segment": "builtins", "name": "-", "kind": "native",
+        "description": "Variadic subtract. 0 args → 0; 1 arg → negation; ≥2 args → left fold."
+      },
+      "locked": true
+    },
+    {
+      "key": "*",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "*", "segment": "builtins", "name": "*", "kind": "native",
+        "description": "Variadic product. Coerces args via Number(); 0 args → 1."
+      },
+      "locked": true
+    },
+    {
+      "key": "/",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "/", "segment": "builtins", "name": "/", "kind": "native",
+        "description": "Variadic divide. 0 args → NaN; 1 arg → reciprocal; ≥2 args → left fold."
+      },
+      "locked": true
+    }
+  ]
+}

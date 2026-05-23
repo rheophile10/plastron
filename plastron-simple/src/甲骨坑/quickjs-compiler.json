@@ -1,0 +1,70 @@
+{
+  "name": "quickjs-compiler",
+  "cels": [
+    {
+      "key": "quickjs",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "quickjs", "segment": "quickjs-compiler", "name": "quickjs", "kind": "native",
+        "description": "QuickJS compiler. Compiles JS source — last expression must be a callable — into a runtime Fn via QuickJS-emscripten. JS runs inside a wasm sandbox: no DOM, no eval, no host APIs unless explicitly granted via the host segment. Sub stitutes for Javy (same QuickJS interpreter, npm-native distribution). Lazy-loads the runtime on first compile."
+      },
+      "locked": true
+    },
+
+    {
+      "key": "load-deps.quickjs",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "load-deps.quickjs", "segment": "quickjs-compiler", "schema": "boolean",
+        "description": "Bootstrap switch. Lazy: the QuickJS runtime (~1MB) loads on first quickjs cel compile. Defaults true."
+      },
+      "v": true
+    },
+    {
+      "key": "quickjs.ready",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "quickjs.ready", "segment": "quickjs-compiler", "schema": "boolean",
+        "description": "Runtime-ready sentinel. Stays true at boot (lazy-load masks the transition); v2 with explicit lifecycle will flip false→true at runtime spawn."
+      },
+      "v": true
+    },
+    {
+      "key": "quickjs.alive",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "quickjs.alive", "segment": "quickjs-compiler", "schema": "boolean",
+        "description": "Catastrophic-death sentinel. Main-thread QuickJS doesn't crash without taking the process down; trivially true. Becomes meaningful with worker isolation."
+      },
+      "v": true
+    },
+    {
+      "key": "quickjs.errors",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "quickjs.errors", "segment": "quickjs-compiler", "schema": "array",
+        "description": "Append-only log of CelError values from quickjs lambdas. v1: empty — trap-as-value stores errors on the failing cel's v."
+      },
+      "v": []
+    },
+
+    {
+      "key": "quickjs-to-js",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "quickjs-to-js", "segment": "quickjs-compiler", "name": "quickjs-to-js", "kind": "native",
+        "description": "Bridge: convert a quickjs-domain value to a JS-domain value. v1 wrapper Fns already vm.dump() handles into native JS, so this is identity. Becomes a real marshalling call when composite handles + worker isolation arrive."
+      },
+      "locked": true
+    },
+    {
+      "key": "js-to-quickjs",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "js-to-quickjs", "segment": "quickjs-compiler", "name": "js-to-quickjs", "kind": "native",
+        "description": "Bridge: convert a JS-domain value to a quickjs-domain value. Identity at v1 — the wrapper Fn marshals JS args into VM handles automatically at call boundary."
+      },
+      "locked": true
+    }
+  ]
+}

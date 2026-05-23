@@ -1,0 +1,50 @@
+{
+  "name": "host",
+  "cels": [
+    {
+      "key": "host.log",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "host.log", "segment": "host", "name": "host.log", "kind": "native",
+        "description": "console.log proxy exposed to wasm-backed kinds. WAT modules import via (import \"host\" \"log\" ...); Python lambdas call host.log(...). Sync. Apps that want quiet runs can replace _fn with a noop after install."
+      },
+      "locked": true
+    },
+    {
+      "key": "host.warn",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "host.warn", "segment": "host", "name": "host.warn", "kind": "native",
+        "description": "console.warn proxy. Same pattern as host.log."
+      },
+      "locked": true
+    },
+    {
+      "key": "host.error",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "host.error", "segment": "host", "name": "host.error", "kind": "native",
+        "description": "console.error proxy. Same pattern as host.log."
+      },
+      "locked": true
+    },
+    {
+      "key": "host.now",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "host.now", "segment": "host", "name": "host.now", "kind": "native",
+        "description": "Date.now proxy — milliseconds since the Unix epoch. Sync. Use this rather than calling Date.now inside a lambda directly: replacing _fn with a deterministic clock (e.g., a fixed counter) lets tests run replay-deterministically without monkey-patching globals."
+      },
+      "locked": true
+    },
+    {
+      "key": "host.random",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "host.random", "segment": "host", "name": "host.random", "kind": "native",
+        "description": "Math.random proxy — pseudorandom number in [0, 1). Sync. Same testability story as host.now: swap _fn with a seeded PRNG for deterministic tests."
+      },
+      "locked": true
+    }
+  ]
+}

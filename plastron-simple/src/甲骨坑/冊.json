@@ -1,0 +1,72 @@
+[
+  {
+    "name": "kernel",
+    "version": "1.0.0",
+    "description": "Kernel-internal seeds. Always present.",
+    "dependencies": [
+      "csp",
+      "cel-error",
+      "host",
+      "wasm-types",
+      "js-compiler",
+      "builtins",
+      "wat-compiler",
+      "py-compiler",
+      "quickjs-compiler"
+    ]
+  },
+  {
+    "name": "cel-error",
+    "version": "1.0.0",
+    "description": "Trap-as-value schema. SchemaCel + protocol fns for the { kind: 'error', at, trap, message, stack? } shape that runCycle and compileCelBody store on cels whose evaluator throws.",
+    "dependencies": []
+  },
+  {
+    "name": "host",
+    "version": "1.0.0",
+    "description": "Host-capability cells: console.log/warn/error, now, random. Read by each kind segment's compiler layer (wat as wasm imports; py via pyodide globals binding). Apps replace _fn entries to gate or sandbox capabilities at install time.",
+    "dependencies": []
+  },
+  {
+    "name": "wasm-types",
+    "version": "1.0.0",
+    "description": "SchemaCels for the WIT primitive types (wasm:bool, wasm:i32, wasm:u32, wasm:i64, wasm:u64, wasm:f32, wasm:f64, wasm:char, wasm:string). Discriminator kind:'wasm' marks cels as living in a wasm domain — bridge cels and per-kind precompute layers dispatch on it.",
+    "dependencies": []
+  },
+  {
+    "name": "csp",
+    "version": "1.0.0",
+    "description": "Runtime CSP capability probes (eval, wasm) surfaced as locked cels.",
+    "dependencies": []
+  },
+  {
+    "name": "js-compiler",
+    "version": "1.0.0",
+    "description": "The 'js' compiler cel — `new Function`-backed JS source → Fn. Gated on csp.eval-available.",
+    "dependencies": ["csp"]
+  },
+  {
+    "name": "builtins",
+    "version": "1.0.0",
+    "description": "Arithmetic operators (+ - * /) as LockedLambdaCels. Flushable; formulas referencing them error cleanly when removed.",
+    "dependencies": []
+  },
+  {
+    "name": "wat-compiler",
+    "version": "1.0.0",
+    "description": "The 'wat' compiler cel — WebAssembly text-format source → callable Fn via wabt.js + WebAssembly.instantiate. Gated on csp.wasm-available. wabt.js is dynamic-imported only on first compile.",
+    "dependencies": ["csp"]
+  },
+  {
+    "name": "py-compiler",
+    "version": "1.0.0",
+    "description": "The 'py' compiler cel — Python source → callable Fn via Pyodide. Plus py-to-js and js-to-py bridge cels using Pyodide's built-in conversion. Pyodide is dynamic-imported only on first compile; main-thread in v1.",
+    "dependencies": ["csp"]
+  },
+  {
+    "name": "quickjs-compiler",
+    "version": "1.0.0",
+    "description": "The 'quickjs' compiler cel — JS source → callable Fn via QuickJS-emscripten (JS-in-wasm sandbox). Plus quickjs-to-js and js-to-quickjs bridge cels. Substitutes for Javy with the same QuickJS interpreter, npm-native distribution. Lazy-loaded on first compile; main-thread in v1.",
+    "dependencies": ["csp"]
+  }
+]

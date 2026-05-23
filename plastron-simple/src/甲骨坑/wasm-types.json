@@ -1,0 +1,201 @@
+{
+  "name": "wasm-types",
+  "cels": [
+    {
+      "key": "wasm:bool",
+      "celType": "SchemaCel",
+      "metadata": { "key": "wasm:bool", "segment": "wasm-types" },
+      "v": {
+        "key": "wasm:bool",
+        "kind": "wasm",
+        "wit": { "kind": "bool" },
+        "zod": { "type": "boolean" },
+        "protocols": {
+          "isChanged": "wasm-scalar_isChanged",
+          "hydrate":   "wasm-scalar_hydrate",
+          "dehydrate": "wasm-scalar_dehydrate"
+        }
+      }
+    },
+
+    {
+      "key": "wasm:i32",
+      "celType": "SchemaCel",
+      "metadata": { "key": "wasm:i32", "segment": "wasm-types" },
+      "v": {
+        "key": "wasm:i32",
+        "kind": "wasm",
+        "wit": { "kind": "s32" },
+        "zod": { "type": "integer", "minimum": -2147483648, "maximum": 2147483647 },
+        "protocols": {
+          "isChanged": "wasm-scalar_isChanged",
+          "hydrate":   "wasm-scalar_hydrate",
+          "dehydrate": "wasm-scalar_dehydrate"
+        }
+      }
+    },
+    {
+      "key": "wasm:u32",
+      "celType": "SchemaCel",
+      "metadata": { "key": "wasm:u32", "segment": "wasm-types" },
+      "v": {
+        "key": "wasm:u32",
+        "kind": "wasm",
+        "wit": { "kind": "u32" },
+        "zod": { "type": "integer", "minimum": 0, "maximum": 4294967295 },
+        "protocols": {
+          "isChanged": "wasm-scalar_isChanged",
+          "hydrate":   "wasm-scalar_hydrate",
+          "dehydrate": "wasm-scalar_dehydrate"
+        }
+      }
+    },
+
+    {
+      "key": "wasm:i64",
+      "celType": "SchemaCel",
+      "metadata": { "key": "wasm:i64", "segment": "wasm-types" },
+      "v": {
+        "key": "wasm:i64",
+        "kind": "wasm",
+        "wit": { "kind": "s64" },
+        "zod": { "type": "string", "description": "BigInt encoded as decimal string for JSON round-trip" },
+        "protocols": {
+          "isChanged": "wasm-scalar_isChanged",
+          "hydrate":   "wasm-bigint_hydrate",
+          "dehydrate": "wasm-bigint_dehydrate"
+        }
+      }
+    },
+    {
+      "key": "wasm:u64",
+      "celType": "SchemaCel",
+      "metadata": { "key": "wasm:u64", "segment": "wasm-types" },
+      "v": {
+        "key": "wasm:u64",
+        "kind": "wasm",
+        "wit": { "kind": "u64" },
+        "zod": { "type": "string", "description": "BigInt encoded as decimal string for JSON round-trip" },
+        "protocols": {
+          "isChanged": "wasm-scalar_isChanged",
+          "hydrate":   "wasm-bigint_hydrate",
+          "dehydrate": "wasm-bigint_dehydrate"
+        }
+      }
+    },
+
+    {
+      "key": "wasm:f32",
+      "celType": "SchemaCel",
+      "metadata": { "key": "wasm:f32", "segment": "wasm-types" },
+      "v": {
+        "key": "wasm:f32",
+        "kind": "wasm",
+        "wit": { "kind": "f32" },
+        "zod": { "type": "number" },
+        "protocols": {
+          "isChanged": "wasm-scalar_isChanged",
+          "hydrate":   "wasm-scalar_hydrate",
+          "dehydrate": "wasm-scalar_dehydrate"
+        }
+      }
+    },
+    {
+      "key": "wasm:f64",
+      "celType": "SchemaCel",
+      "metadata": { "key": "wasm:f64", "segment": "wasm-types" },
+      "v": {
+        "key": "wasm:f64",
+        "kind": "wasm",
+        "wit": { "kind": "f64" },
+        "zod": { "type": "number" },
+        "protocols": {
+          "isChanged": "wasm-scalar_isChanged",
+          "hydrate":   "wasm-scalar_hydrate",
+          "dehydrate": "wasm-scalar_dehydrate"
+        }
+      }
+    },
+
+    {
+      "key": "wasm:char",
+      "celType": "SchemaCel",
+      "metadata": { "key": "wasm:char", "segment": "wasm-types" },
+      "v": {
+        "key": "wasm:char",
+        "kind": "wasm",
+        "wit": { "kind": "char" },
+        "zod": { "type": "string", "minLength": 1, "maxLength": 1 },
+        "protocols": {
+          "isChanged": "wasm-scalar_isChanged",
+          "hydrate":   "wasm-scalar_hydrate",
+          "dehydrate": "wasm-scalar_dehydrate"
+        }
+      }
+    },
+    {
+      "key": "wasm:string",
+      "celType": "SchemaCel",
+      "metadata": { "key": "wasm:string", "segment": "wasm-types" },
+      "v": {
+        "key": "wasm:string",
+        "kind": "wasm",
+        "wit": { "kind": "string" },
+        "zod": { "type": "string" },
+        "protocols": {
+          "isChanged": "wasm-scalar_isChanged",
+          "hydrate":   "wasm-scalar_hydrate",
+          "dehydrate": "wasm-scalar_dehydrate"
+        }
+      }
+    },
+
+    {
+      "key": "wasm:opaque",
+      "celType": "SchemaCel",
+      "metadata": { "key": "wasm:opaque", "segment": "wasm-types" },
+      "v": {
+        "key": "wasm:opaque",
+        "kind": "wasm",
+        "wit": { "kind": "record", "fields": {} },
+        "zod": { "type": "object" },
+        "protocols": {
+          "isChanged": "wasm-scalar_isChanged",
+          "hydrate":   "wasm-scalar_hydrate",
+          "dehydrate": "wasm-scalar_dehydrate"
+        }
+      }
+    },
+
+    {
+      "key": "wasm-scalar_isChanged",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "wasm-scalar_isChanged", "segment": "wasm-types", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "wasm-scalar_hydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "wasm-scalar_hydrate", "segment": "wasm-types", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "wasm-scalar_dehydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "wasm-scalar_dehydrate", "segment": "wasm-types", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "wasm-bigint_hydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "wasm-bigint_hydrate", "segment": "wasm-types", "kind": "native" },
+      "locked": true
+    },
+    {
+      "key": "wasm-bigint_dehydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "wasm-bigint_dehydrate", "segment": "wasm-types", "kind": "native" },
+      "locked": true
+    }
+  ]
+}

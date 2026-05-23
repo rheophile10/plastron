@@ -1,0 +1,50 @@
+{
+  "name": "js-compiler",
+  "cels": [
+    {
+      "key": "js",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "js", "segment": "js-compiler", "name": "js", "kind": "native",
+        "description": "JavaScript compiler. Compiles JS source into runtime Fns. new Function-backed today; future JS-to-wasm pipeline swaps the body."
+      },
+      "locked": true
+    },
+    {
+      "key": "load-deps.js",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "load-deps.js", "segment": "js-compiler", "schema": "boolean",
+        "description": "Bootstrap switch. JS compilation is in-process and instant, so this is trivially true. Reserved for symmetry with worker-backed kinds."
+      },
+      "v": true
+    },
+    {
+      "key": "js.ready",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "js.ready", "segment": "js-compiler", "schema": "boolean",
+        "description": "Runtime-ready sentinel. Always true for the in-process JS compiler."
+      },
+      "v": true
+    },
+    {
+      "key": "js.alive",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "js.alive", "segment": "js-compiler", "schema": "boolean",
+        "description": "Catastrophic-death sentinel. Main-thread kinds never die."
+      },
+      "v": true
+    },
+    {
+      "key": "js.errors",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "js.errors", "segment": "js-compiler", "schema": "array",
+        "description": "Append-only log of CelError values produced by js lambdas. v1: empty array."
+      },
+      "v": []
+    }
+  ]
+}

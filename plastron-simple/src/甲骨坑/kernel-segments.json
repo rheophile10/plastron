@@ -1,0 +1,32 @@
+{
+  "name": "kernel-segments",
+  "cels": [
+    {
+      "key": "getSegmentManifest",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "getSegmentManifest", "segment": "kernel", "name": "getSegmentManifest", "kind": "native",
+        "description": "Read a 冊 manifest from state.segments by name."
+      },
+      "locked": true
+    },
+    {
+      "key": "listSegments",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "listSegments", "segment": "kernel", "name": "listSegments", "kind": "native",
+        "description": "Return every 冊 currently loaded into state.segments."
+      },
+      "locked": true
+    },
+    {
+      "key": "findDependents",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "findDependents", "segment": "kernel", "name": "findDependents", "kind": "native",
+        "description": "Walk 冊.dependencies to find every manifest that transitively depends on a given segment."
+      },
+      "locked": true
+    }
+  ]
+}

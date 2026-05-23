@@ -1,0 +1,130 @@
+{
+  "name": "kernel-io",
+  "cels": [
+    {
+      "key": "get",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "get", "segment": "kernel", "name": "get", "kind": "native",
+        "description": "Read a cel value by key."
+      },
+      "locked": true
+    },
+    {
+      "key": "set",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "set", "segment": "kernel", "name": "set", "kind": "native",
+        "description": "Write a value to a cel and propagate the cascade."
+      },
+      "locked": true
+    },
+    {
+      "key": "update",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "update", "segment": "kernel", "name": "update", "kind": "native",
+        "description": "Read-transform-write a cel; sugar for set(key, fn(get(key)))."
+      },
+      "locked": true
+    },
+    {
+      "key": "batch",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "batch", "segment": "kernel", "name": "batch", "kind": "native",
+        "description": "Write many cels then cascade once over the union of their downstreams."
+      },
+      "locked": true
+    },
+    {
+      "key": "getCel",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "getCel", "segment": "kernel", "name": "getCel", "kind": "native",
+        "description": "Read the full {v, f, l} triple of a cel."
+      },
+      "locked": true
+    },
+    {
+      "key": "setCel",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "setCel", "segment": "kernel", "name": "setCel", "kind": "native",
+        "description": "Atomically write a cel's {v, f, l} triple; re-precomputes if topology shifted."
+      },
+      "locked": true
+    },
+    {
+      "key": "getCelBatch",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "getCelBatch", "segment": "kernel", "name": "getCelBatch", "kind": "native",
+        "description": "Read the full triple for many cels."
+      },
+      "locked": true
+    },
+    {
+      "key": "setCelBatch",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "setCelBatch", "segment": "kernel", "name": "setCelBatch", "kind": "native",
+        "description": "Atomically write many cels' triples; one precompute at the end if any topology shifted."
+      },
+      "locked": true
+    },
+    {
+      "key": "touch",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "touch", "segment": "kernel", "name": "touch", "kind": "native",
+        "description": "Fire dynamicCascade with no seeded changes — refresh clocks/randoms."
+      },
+      "locked": true
+    },
+    {
+      "key": "consume",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "consume", "segment": "kernel", "name": "consume", "kind": "native",
+        "description": "Same shape as touch; semantic alias for 'observe and drain'."
+      },
+      "locked": true
+    },
+    {
+      "key": "drain",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "drain", "segment": "kernel", "name": "drain", "kind": "native",
+        "description": "Flush channels to fixed point without writing any cels."
+      },
+      "locked": true
+    },
+    {
+      "key": "registerLambda",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "registerLambda", "segment": "kernel", "name": "registerLambda", "kind": "native",
+        "description": "Install a fn (or compile one from source) at a key, with optional metadata and dispose."
+      },
+      "locked": true
+    },
+    {
+      "key": "clearErrors",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "clearErrors", "segment": "kernel", "name": "clearErrors", "kind": "native",
+        "description": "Empty the state-level CelError log. Host calls this before retrying a failed hydrate or after surfacing errors to the user; the kernel never auto-clears."
+      },
+      "locked": true
+    },
+    {
+      "key": "f",
+      "celType": "EditableLambdaCel",
+      "metadata": {
+        "key": "f", "segment": "kernel", "name": "f", "kind": "native",
+        "description": "Compile a formula source string to a runtime Fn. Default S-expression compiler; hosts swap formula languages by replacing this."
+      }
+    }
+  ]
+}

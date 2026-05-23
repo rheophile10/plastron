@@ -1,0 +1,41 @@
+{
+  "name": "kernel-lifecycle",
+  "cels": [
+    {
+      "key": "runCycle",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "runCycle", "segment": "kernel", "name": "runCycle", "kind": "native",
+        "description": "Fire the full cascade once across every fireable cel."
+      },
+      "locked": true
+    },
+    {
+      "key": "hydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "hydrate", "segment": "kernel", "name": "hydrate", "kind": "native",
+        "description": "Inflate segments + manifests + fn maps into state.cels; lock-aware."
+      },
+      "locked": true
+    },
+    {
+      "key": "dehydrate",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "dehydrate", "segment": "kernel", "name": "dehydrate", "kind": "native",
+        "description": "Serialize non-kernel cels and manifests to JSON-shaped 甲骨 + 冊 records."
+      },
+      "locked": true
+    },
+    {
+      "key": "flush",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "flush", "segment": "kernel", "name": "flush", "kind": "native",
+        "description": "Tear down a segment and its dependents; fires _dispose, removes cels, precomputes."
+      },
+      "locked": true
+    }
+  ]
+}

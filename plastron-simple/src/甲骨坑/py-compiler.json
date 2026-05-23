@@ -1,0 +1,79 @@
+{
+  "name": "py-compiler",
+  "cels": [
+    {
+      "key": "py",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "py", "segment": "py-compiler", "name": "py", "kind": "native",
+        "description": "Python compiler. Compiles Python source — typically a `def` followed by the function name — into a runtime Fn via Pyodide. Pyodide is dynamic-imported on first compile and the runtime instance is shared across all py-kind cels. v1 runs main-thread; worker isolation is v2."
+      },
+      "locked": true
+    },
+
+    {
+      "key": "load-deps.py",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "load-deps.py", "segment": "py-compiler", "schema": "boolean",
+        "description": "Bootstrap switch for the py kind. true at boot — Pyodide lazy-loads on first py cel compile so apps that ship no py code pay nothing. Apps that want lazy install can flip this false before hydrate (forthcoming when ready-flip lifecycle is wired in v2)."
+      },
+      "v": true
+    },
+    {
+      "key": "py.ready",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "py.ready", "segment": "py-compiler", "schema": "boolean",
+        "description": "Runtime-ready sentinel. v1 lazy-loads Pyodide on first compile (so this is observationally true once hydrate awaits the first py cel); v2 with a worker will flip it false→true at boot for accurate spinner UX. Defaults true."
+      },
+      "v": true
+    },
+    {
+      "key": "py.alive",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "py.alive", "segment": "py-compiler", "schema": "boolean",
+        "description": "Catastrophic-death sentinel. Main-thread Pyodide can't crash without taking the whole process down, so this stays true. Becomes meaningful when py moves into a worker."
+      },
+      "v": true
+    },
+    {
+      "key": "py.errors",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "py.errors", "segment": "py-compiler", "schema": "array",
+        "description": "Append-only log of CelError values produced by py lambdas. v1: empty; trap-as-value (see kernel/runCycle.ts) stores Python exceptions on the failing cel's v. Reserved for diagnostic accumulation."
+      },
+      "v": []
+    },
+    {
+      "key": "py.worker-mode",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "py.worker-mode", "segment": "py-compiler", "schema": "boolean",
+        "description": "When true, py-compiler spawns a Node worker_threads worker (or browser Worker) hosting Pyodide, and every compile/call becomes a postMessage round-trip returning a Promise. py.ready genuinely transitions false → true at boot. When false (default), Pyodide runs main-thread — sync after the first lazy-load. Tests that mock host fns rely on main-thread mode."
+      },
+      "v": false
+    },
+
+    {
+      "key": "py-to-js",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "py-to-js", "segment": "py-compiler", "name": "py-to-js", "kind": "native",
+        "description": "Bridge: convert a py-domain value (PyProxy or already-JS scalar) to a JS-domain value. Calls pyodide.toJs() on PyProxies; identity for already-converted scalars. Authors invoke via (py-to-js someCel)."
+      },
+      "locked": true
+    },
+    {
+      "key": "js-to-py",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "js-to-py", "segment": "py-compiler", "name": "js-to-py", "kind": "native",
+        "description": "Bridge: convert a JS-domain value to a py-domain value. Calls pyodide.toPy(). For scalars this is essentially identity (Python ints, floats, strs interoperate freely). For composites it builds a Python dict/list/etc. Authors invoke via (js-to-py someCel)."
+      },
+      "locked": true
+    }
+  ]
+}

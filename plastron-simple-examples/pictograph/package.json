@@ -1,0 +1,16 @@
+{
+  "name": "plastron-simple-pictograph-example",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Pictograph example ported to plastron-simple: read a dehydrated 甲骨, hydrate it, runCycle, demonstrate a runtime function-cel swap, dehydrate to 甲骨.json.",
+  "scripts": {
+    "start": "tsx main.ts",
+    "check": "tsc --noEmit"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1",
+    "tsx": "^4.19.2",
+    "typescript": "~5.9.3"
+  }
+}
