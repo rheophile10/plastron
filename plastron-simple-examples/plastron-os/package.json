@@ -7,7 +7,7 @@
   "scripts": {
     "bundle": "bun bundle.ts",
     "serve": "bun serve.ts",
-    "test": "bun test desktop.test.ts && bun test sheets.test.ts && bun test browser-main.test.ts && bun test file-explorer.test.ts && bun test doom-app.test.ts",
+    "test": "bun test desktop.test.ts && bun test sheets.test.ts && bun test browser-main.test.ts && bun test file-explorer.test.ts && bun test file-picker.test.ts && bun test doom-app.test.ts",
     "e2e": "bun e2e/run.ts",
     "check": "bun build index.html --target=browser --outdir /tmp/os-check --external pyodide --external quickjs-emscripten --external wabt --external node:fs/promises --external node:path"
   },

@@ -26,7 +26,7 @@ export const renderFileToolbar = (doc: string | null | undefined): string => {
     <div class="file-toolbar">
       <button class="ft-new"  onClick={{(dispatch "file.new")}}>📄 New</button>
       <button class="ft-save" onClick={{(dispatch "file.save")}}>💾 Save</button>
-      <button class="ft-open" onClick={{(dispatch "file.open")}}>📂 Open</button>
+      <button class="ft-open" onClick={{(dispatch "file.pick")}}>📂 Open</button>
       <span class="doc-name">${String(label).replace(/[<>{}]/g, "")}</span>
     </div>`;
 };

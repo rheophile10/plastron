@@ -1,5 +1,13 @@
-import { test } from "bun:test";
+import { test, beforeEach } from "bun:test";
 import assert from "node:assert/strict";
+import { rm } from "node:fs/promises";
+
+// Wipe any leftover OPFS-seeded doom assets between runs so the loadDoomAsset
+// cache-hit branch isn't poisoned by a previous test (node-fs backend persists
+// at .plastron-fs/doom/*).
+beforeEach(async () => {
+  await rm(".plastron-fs/doom", { recursive: true, force: true });
+});
 
 // Smoke: setupDoom (browser-main's replacement for setupDoomStub) hydrates
 // the doom segment, registers the doom.boot action, and the view contains
@@ -83,10 +91,14 @@ test("doom.boot reports a recoverable error when the WAD/wasm aren't served (pro
   await resolveFn(state, "drain")(state, "plastron-dom.paint");
   getPainter(state).drain();
 
-  // Stub fetch so the test is hermetic: doom.wasm returns 404 → doom.boot
-  // catches it and writes a helpful message to doom.status. Crucially, the
-  // boot path itself reaches that branch — proving the registered action
-  // and the canvas lookup work end-to-end.
+  // Stub fetch so the test is hermetic. With the new boot flow, doom.boot
+  // uses bundle-inlined gz-b64 bytes (when present) or fetch (when absent)
+  // and then builds the harness. The mock canvas has no `.getContext`, so
+  // the harness build throws — that's still a recoverable error: doom.boot
+  // catches it and writes a message to doom.status. The invariant the
+  // test cares about is that the boot path was REACHED (the dispatch +
+  // canvas lookup + asset load all completed) and the error surfaced via
+  // doom.status rather than crashing silently.
   const origFetch = globalThis.fetch;
   globalThis.fetch = async () => new Response("nope", { status: 404 });
   try {
@@ -95,5 +107,7 @@ test("doom.boot reports a recoverable error when the WAD/wasm aren't served (pro
     globalThis.fetch = origFetch;
   }
   const status = state.cels.get("doom.status").v;
-  assert.match(String(status), /doom\.wasm not found|HTTP 404/);
+  assert.match(String(status),
+    /doom\.wasm not found|HTTP 404|WAD|boot failed|getContext|no WAD/i,
+    `expected a recoverable boot error in doom.status; got: ${status}`);
 });

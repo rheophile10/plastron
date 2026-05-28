@@ -308,6 +308,57 @@ const scDragDropDispatch = async (page: Page, docB: string): Promise<void> => {
   await exitToHome(page);
 };
 
+// ── scenario 4c — file picker modal (Notepad Open shows the picker) ─────────
+// Earlier scenarios moved docA + docB out of /notepad, so this scenario
+// creates a fresh doc to exercise the picker on.
+const scOpenPicker = async (page: Page, suffix: string): Promise<void> => {
+  console.log("\n▶ Scenario 4c — Notepad's Open shows a picker modal");
+  const docC = `notes-picker-${suffix}`;
+
+  await page.locator('button:has-text("Notepad")').first().click();
+  ok(await waitForCel(page, "os.active", "notepad"), "Notepad launched");
+  // A fresh doc in /notepad — that's where the picker will land.
+  await callFn(page, "file.new", docC);
+  await page.locator("textarea.pad").fill("picker-target");
+  await waitForCel(page, "notepad.text", "picker-target");
+  await callFn(page, "file.save");
+
+  // Open a different doc first so we can prove the picker switches docs.
+  await callFn(page, "file.new", `${docC}-other`);
+  await page.locator("textarea.pad").fill("other doc");
+  await callFn(page, "file.save");
+
+  // Click Open → modal opens (data-open=true) and shows file cards.
+  await page.locator('button.ft-open').first().click();
+  ok(await waitForCel(page, "picker.app", "notepad"), "picker opens for notepad");
+  ok(await page.locator('.picker-root[data-open="true"]').first().isVisible(), "picker modal visible");
+
+  // docC is in /notepad — the picker should land there and show it.
+  await page.locator(`button.card.file:has-text("${docC}")`).first().waitFor({ state: "visible", timeout: 2000 });
+  ok(await page.locator(`button.card.file:has-text("${docC}")`).first().isVisible(), `${docC} in picker`);
+
+  // Click the file → picker closes + that doc is the active one.
+  await page.locator(`button.card.file:has-text("${docC}")`).first().click();
+  ok(await waitForCel(page, "picker.app", null), "picker closed after select");
+  ok(await waitForCel(page, "os.doc", docC), `os.doc=${docC} after picker select`);
+  ok(await waitForCel(page, "notepad.text", "picker-target"), `${docC} content loaded`);
+
+  // Re-open the picker and use the × close button.
+  await page.locator('button.ft-open').first().click();
+  ok(await waitForCel(page, "picker.app", "notepad"), "picker re-opens");
+  await page.locator('.picker-x').first().click();
+  ok(await waitForCel(page, "picker.app", null), "× closed the picker");
+
+  // Once more, and click the backdrop's corner (the centered panel covers
+  // the default click position) to cancel.
+  await page.locator('button.ft-open').first().click();
+  await waitForCel(page, "picker.app", "notepad");
+  await page.locator('.picker-backdrop').first().click({ position: { x: 10, y: 10 } });
+  ok(await waitForCel(page, "picker.app", null), "backdrop click closed the picker");
+
+  await exitToHome(page);
+};
+
 // ── scenario 5 — Sheets round-trip ──────────────────────────────────────────
 const scSheetsRoundTrip = async (page: Page, suffix: string): Promise<void> => {
   console.log("\n▶ Scenario 5 — Sheets — open, edit, save, new, open A round-trip");
@@ -366,6 +417,7 @@ export const runScenarios = async (baseURL: string): Promise<number> => {
     await scFileExplorerNavigate(page, docA, docB);
     await scFileExplorerMkdirAndDragDrop(page, docA, suffix);
     await scDragDropDispatch(page, docB);
+    await scOpenPicker(page, suffix);
     await scSheetsRoundTrip(page, suffix);
     await ctx.close();
   } finally {
