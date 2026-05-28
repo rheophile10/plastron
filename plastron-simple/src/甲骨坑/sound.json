@@ -1,0 +1,77 @@
+{
+  "name": "sound",
+  "cels": [
+    {
+      "key": "sound.context-state",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "sound.context-state", "segment": "sound", "schema": "string",
+        "description": "AudioContext lifecycle state — 'absent' (off-browser, no Web Audio API), 'suspended' (autoplay-gated, awaiting user gesture), 'running', or 'closed'. Lazily updated by play-tone/play-pcm/stop-all. Hosts can observe to show a 'click to enable sound' affordance."
+      },
+      "v": "absent"
+    },
+    {
+      "key": "sound.master-gain",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "sound.master-gain", "segment": "sound", "schema": "number",
+        "description": "Master volume 0..1. Read at each play call; multiplied with the per-sound gain. Set with `set` or `setCel`."
+      },
+      "v": 1
+    },
+    {
+      "key": "sound.play-tone",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "sound.play-tone", "segment": "sound", "name": "sound.play-tone", "kind": "native",
+        "description": "Play a synthesized oscillator tone. Args: { freq:Hz, duration?:ms = 200, type?:'sine'|'square'|'sawtooth'|'triangle' = 'sine', gain?:0..1 = 0.3 }. Lazily creates + resumes the AudioContext on first call. No-op off-browser."
+      },
+      "locked": true
+    },
+    {
+      "key": "sound.play-pcm",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "sound.play-pcm", "segment": "sound", "name": "sound.play-pcm", "kind": "native",
+        "description": "Play raw PCM samples. Args: { samples:Float32Array (-1..1), rate?:Hz = 44100, channels?:1|2 = 1, gain?:0..1 = 1 }. For >1 channel, samples must be interleaved. No-op off-browser."
+      },
+      "locked": true
+    },
+    {
+      "key": "sound.stop-all",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "sound.stop-all", "segment": "sound", "name": "sound.stop-all", "kind": "native",
+        "description": "Stop every active source (tones + PCM). No-op off-browser."
+      },
+      "locked": true
+    },
+    {
+      "key": "sound.stop-source",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "sound.stop-source", "segment": "sound", "name": "sound.stop-source", "kind": "native",
+        "description": "Stop the source identified by a handle returned from play-pcm. No-op for an unknown / already-ended handle, and no-op off-browser."
+      },
+      "locked": true
+    },
+    {
+      "key": "sound.update-source",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "sound.update-source", "segment": "sound", "name": "sound.update-source", "kind": "native",
+        "description": "Adjust gain/pan on a live play-pcm source. Args: (handle, { gain?, pan? }). gain is multiplied with the current master at apply time. No-op for unknown handles / off-browser."
+      },
+      "locked": true
+    },
+    {
+      "key": "sound.is-playing",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "sound.is-playing", "segment": "sound", "name": "sound.is-playing", "kind": "native",
+        "description": "Returns true if the handle returned from play-pcm is still playing. Returns false for unknown handles and off-browser."
+      },
+      "locked": true
+    }
+  ]
+}

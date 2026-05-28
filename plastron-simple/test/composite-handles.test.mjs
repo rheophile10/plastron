@@ -1,11 +1,11 @@
-import { test, after } from "node:test";
+import { test, afterAll } from "bun:test";
 import assert from "node:assert/strict";
 import { createInitialState, resolveFn, isWasmHandle } from "../dist/index.js";
 import { _resetPyWorker } from "../dist/甲骨坑/py-compiler.js";
 
 const baseManifest = { name: "user", version: "0.0.1", description: "test", dependencies: [] };
 
-after(async () => {
+afterAll(async () => {
   await _resetPyWorker();
 });
 
@@ -22,8 +22,8 @@ test("wasm:opaque schema cel is seeded with kind='wasm' and a composite wit type
 
 // ── main-thread mode: composite output → handle on formula's cel.v ─────────
 
-test("a py lambda with outputSchema=wasm:opaque (main-thread), called from a formula, returns a handle", async (t) => {
-  t.diagnostic("loads Pyodide main-thread; ~5-20s first time");
+test("a py lambda with outputSchema=wasm:opaque (main-thread), called from a formula, returns a handle", { timeout: 60000 }, async () => {
+  console.log("loads Pyodide main-thread; ~5-20s first time");
 
   const state = createInitialState();
   const hydrate  = resolveFn(state, "hydrate");
@@ -54,7 +54,7 @@ test("a py lambda with outputSchema=wasm:opaque (main-thread), called from a for
 
 // ── py-to-js bridge materializes a main-thread handle ──────────────────────
 
-test("py-to-js bridge materializes a main-thread handle to its JS form", async () => {
+test("py-to-js bridge materializes a main-thread handle to its JS form", { timeout: 60000 }, async () => {
   const state = createInitialState();
   const hydrate  = resolveFn(state, "hydrate");
   const runCycle = resolveFn(state, "runCycle");
@@ -89,8 +89,8 @@ test("py-to-js bridge materializes a main-thread handle to its JS form", async (
 
 // ── worker mode: composite handle, materialized via to-js message ──────────
 
-test("worker mode: composite returned as handle; bridge materializes via to-js round trip", async (t) => {
-  t.diagnostic("spawns Pyodide worker; reuses singleton across worker-mode tests");
+test("worker mode: composite returned as handle; bridge materializes via to-js round trip", { timeout: 60000 }, async () => {
+  console.log("spawns Pyodide worker; reuses singleton across worker-mode tests");
 
   const state = createInitialState();
   state.cels.get("py.worker-mode").v = true;
@@ -123,8 +123,8 @@ test("worker mode: composite returned as handle; bridge materializes via to-js r
 
 // ── upstream handle flows into downstream py cel without re-marshalling ────
 
-test("worker mode: a handle flows into a downstream py cel and is dereferenced server-side", async (t) => {
-  t.diagnostic("uses worker; composite stays in py-domain across two py cels");
+test("worker mode: a handle flows into a downstream py cel and is dereferenced server-side", { timeout: 60000 }, async () => {
+  console.log("uses worker; composite stays in py-domain across two py cels");
 
   const state = createInitialState();
   state.cels.get("py.worker-mode").v = true;
@@ -158,7 +158,7 @@ test("worker mode: a handle flows into a downstream py cel and is dereferenced s
 
 // ── scalar output schemas still produce inline values ──────────────────────
 
-test("a py lambda with a SCALAR outputSchema (wasm:i32) returns an inline value, not a handle", async () => {
+test("a py lambda with a SCALAR outputSchema (wasm:i32) returns an inline value, not a handle", { timeout: 60000 }, async () => {
   const state = createInitialState();
   const hydrate  = resolveFn(state, "hydrate");
   const runCycle = resolveFn(state, "runCycle");

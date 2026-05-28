@@ -1,8 +1,10 @@
 import type {
-  Compiler, EditableLambdaCel, Fn, LambdaCelMetadata, LockedLambdaCel,
+  Compiler, ComputeCel, EditableLambdaCel, Fn, LambdaCelMetadata, LockedLambdaCel,
   RegisterLambdaArgs, State,
 } from "../../types/index.js";
 import { resolveFn } from "../resolve-fn.js";
+import { hasHooksOrCache, makeLambdaTrampoline } from "../hooks.js";
+import { invalidate } from "../invalidate.js";
 
 // ============================================================================
 // registerLambda — runtime lambda registration. Installs a LambdaCel
@@ -87,23 +89,38 @@ export const registerLambda: Fn = async (state: State, args: RegisterLambdaArgs)
   // change (Editable → Locked), so we replace rather than mutate.
   // Otherwise an unlocked re-register updates in place, preserving the
   // cel reference so anything holding it sees the new fn.
+  let landed: ComputeCel;
   if (existing && !args.locked) {
     Object.assign(existing.metadata, meta);
     existing._fn = runtime;
     if (dispose) existing._dispose = dispose;
+    landed = existing as ComputeCel;
   } else if (args.locked) {
     const cel: LockedLambdaCel = {
       celType: "LockedLambdaCel", metadata: meta, v: null, locked: true, _fn: runtime,
     };
     if (dispose) cel._dispose = dispose;
     state.cels.set(args.key, cel);
+    landed = cel as ComputeCel;
   } else {
     const cel: EditableLambdaCel = {
       celType: "EditableLambdaCel", metadata: meta, v: null, _fn: runtime,
     };
     if (dispose) cel._dispose = dispose;
     state.cels.set(args.key, cel);
+    landed = cel as ComputeCel;
   }
+
+  // Re-wrap _fn with the hook+memo trampoline when applicable. For
+  // in-place updates of an existing EditableLambdaCel, this restores
+  // the trampoline that the direct _fn assignment above overwrote.
+  if (hasHooksOrCache(landed) && landed._fn) {
+    landed._fn = makeLambdaTrampoline(landed._fn, landed, state);
+  }
+
+  // Definition-change cache teardown — clear downstream consumers'
+  // _memoCache entries that may have captured the old fn's outputs.
+  invalidate(state, args.key);
 
   return state;
 };

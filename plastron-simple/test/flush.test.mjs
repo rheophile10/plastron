@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test } from "bun:test";
 import assert from "node:assert/strict";
 import { createInitialState, resolveFn } from "../dist/index.js";
 
@@ -122,11 +122,19 @@ test("flush fires _dispose on lambda cels before deletion", async () => {
   assert.equal(state.cels.get("withDispose"), undefined);
 });
 
-test("flush leaves kernel-segment locked cels alone", async () => {
+test("flush refuses to remove segments in the kernel closure", async () => {
   const state = createInitialState();
   const flush = resolveFn(state, "flush");
-  // Even with { force: true }, the precomputedStates seed survives —
-  // it's locked and lives in the "kernel" segment.
-  await flush(state, "kernel", { force: true });
+  // Post-segment-classification: flushing any kernel-closure member
+  // (role:"kernel" or transitively depended on by one) throws
+  // outright. `force: true` doesn't bypass — the kernel set is
+  // unflushable. See 1-design/3-accepted/00-ontology/
+  // segment-classification.md "Multi-segment kernel".
+  let threw = false;
+  try { await flush(state, "kernel", { force: true }); } catch (e) {
+    threw = true;
+    assert.match(e.message, /kernel closure/);
+  }
+  assert.ok(threw, "flush('kernel') should throw");
   assert.ok(state.cels.get("precomputedStates"), "precomputedStates seed survives");
 });

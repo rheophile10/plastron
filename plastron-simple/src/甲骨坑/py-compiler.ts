@@ -114,6 +114,10 @@ const compileMainThread = async (source: string, state?: State, context?: Compil
     );
   }
   const composite = isCompositeWitType(context?.outputSchema);
+  // Wrapper stays sync. Pyodide's PyProxy.call returns sync in both
+  // Node and Bun for plain (non-async) Python source — adding await
+  // here triggers a deadlock under Bun (Pyodide-in-Bun has issues
+  // with atomics-based microtask scheduling, see BUN-UPGRADE.md).
   return ((...args: unknown[]) => {
     const deref = dereferenceHandles(args);
     const result = (pyFn as (...a: unknown[]) => unknown)(...deref);
@@ -138,16 +142,24 @@ const compileMainThread = async (source: string, state?: State, context?: Compil
   }) as Fn;
 };
 
-// ── worker mode (Node worker_threads) ──────────────────────────────────────
+// ── worker mode (WHATWG Worker — Bun, browser, Deno) ──────────────────────
 
-// Structural Worker type — covers both node:worker_threads.Worker and
-// browser Worker. We only use postMessage + on("message"|"error") +
-// terminate.
+// Structural Worker type matching the WHATWG `Worker` global. Bun
+// implements this natively; modern browsers always have it. The
+// previous Node `worker_threads`-based path is gone — we run on Bun
+// (or browser) now. See plastron-simple/docs/2-roadmap/bun-upgrade.md.
 interface WorkerLike {
   postMessage: (msg: unknown) => void;
-  on?: (event: string, handler: (data: unknown) => void) => void;
-  addEventListener?: (event: string, handler: (e: { data?: unknown }) => void) => void;
-  terminate: () => Promise<void> | number;
+  addEventListener: (event: "message" | "error", h: (e: MessageEventLike) => void) => void;
+  terminate: () => void;
+}
+interface MessageEventLike {
+  data?: unknown;
+  message?: string;
+  error?: unknown;
+}
+interface WorkerCtor {
+  new (url: URL | string, options?: { type?: "module" }): WorkerLike;
 }
 
 interface PyWorkerHandle {
@@ -157,39 +169,34 @@ interface PyWorkerHandle {
   /** Pending request map. Reqs send an id; responses match. */
   pending: Map<number, { resolve: (v: unknown) => void; reject: (e: unknown) => void }>;
   nextId: number;
-  /** Optional state hook the worker uses to flip py.ready / push to
-   *  py.errors when it sees worker events. Set by spawnWorker via a
-   *  closure over the spawning state. */
 }
 
 let _workerHandle: PyWorkerHandle | undefined;
 
-const isNode = (() => {
-  const g = globalThis as { process?: { versions?: { node?: string } } };
-  return typeof g.process?.versions?.node === "string";
-})();
-
 const spawnWorker = async (state: State | undefined): Promise<PyWorkerHandle> => {
-  if (!isNode) {
+  const W = (globalThis as unknown as { Worker?: WorkerCtor }).Worker;
+  if (!W) {
     throw new Error(
-      `py-compiler (worker-mode): browser Worker spawn isn't wired in v1. ` +
-      `Run with py.worker-mode = false in browser, or run in Node.`,
+      `py-compiler (worker-mode): WHATWG Worker constructor missing. ` +
+      `Run in Bun, Deno, or a browser — Node 22 doesn't expose ` +
+      `globalThis.Worker. Set py.worker-mode = false to fall back to ` +
+      `main-thread Pyodide.`,
     );
   }
-  const { Worker } = await import("node:worker_threads");
-  const { fileURLToPath } = await import("node:url");
-  // The compiled worker file is the sibling py-worker.js (tsc output).
-  // import.meta.url points at the running py-compiler.js in dist/.
-  const workerPath = fileURLToPath(new URL("./py-worker.js", import.meta.url));
-  const worker = new Worker(workerPath) as unknown as WorkerLike;
+  // Sibling file in the compiled dist tree (tsc emits py-worker.js
+  // alongside py-compiler.js). The URL is constructed at runtime so
+  // bundlers (bun build, esbuild, vite) can rewrite it to the bundled
+  // worker output path.
+  const workerUrl = new URL("./py-worker.js", import.meta.url);
+  const worker = new W(workerUrl, { type: "module" });
 
   const pending = new Map<number, { resolve: (v: unknown) => void; reject: (e: unknown) => void }>();
   let resolveReady: () => void;
   let rejectReady: (e: unknown) => void;
   const ready = new Promise<void>((res, rej) => { resolveReady = res; rejectReady = rej; });
 
-  const handleMessage = (raw: unknown) => {
-    const msg = raw as Record<string, unknown> & { kind?: string; id?: number };
+  worker.addEventListener("message", (e) => {
+    const msg = e.data as Record<string, unknown> & { kind?: string; id?: number };
     if (msg.kind === "ready") {
       if (state) {
         const readyCel = state.cels.get("py.ready");
@@ -212,27 +219,21 @@ const spawnWorker = async (state: State | undefined): Promise<PyWorkerHandle> =>
       if (msg.stack) err.stack = msg.stack as string;
       slot.reject(err);
     }
-  };
+  });
 
-  // Node worker_threads uses on("message"); browser Workers use
-  // addEventListener("message", e => e.data).
-  if (worker.on) {
-    worker.on("message", handleMessage);
-    worker.on("error", (e: unknown) => {
-      // Worker died catastrophically. Reject every pending request,
-      // mark py.alive false, surface a CelError on py.errors.
-      if (state) {
-        const alive = state.cels.get("py.alive");
-        if (alive) alive.v = false;
-      }
-      const err = e instanceof Error ? e : new Error(String(e));
-      for (const slot of pending.values()) slot.reject(err);
-      pending.clear();
-      rejectReady(err);
-    });
-  } else if (worker.addEventListener) {
-    worker.addEventListener("message", (e) => handleMessage(e.data));
-  }
+  worker.addEventListener("error", (e) => {
+    // Worker died catastrophically. Reject every pending request,
+    // mark py.alive false, surface to host code.
+    if (state) {
+      const alive = state.cels.get("py.alive");
+      if (alive) alive.v = false;
+    }
+    const raw = e.error ?? e.message;
+    const err = raw instanceof Error ? raw : new Error(String(raw));
+    for (const slot of pending.values()) slot.reject(err);
+    pending.clear();
+    rejectReady(err);
+  });
 
   // Reset py.ready to false at spawn (worker is booting Pyodide).
   if (state) {
@@ -382,10 +383,11 @@ const jsToPy: Fn = async (v: unknown) => {
 // Test hook: terminate the worker (if any) and reset state. Allows
 // integration tests to spawn a fresh worker per test case if they need
 // to. Not exposed from the public package entry — internal to py-
-// compiler.
+// compiler. WHATWG Worker.terminate() returns void; the async wrapper
+// stays for API stability across runtimes that may offer a Promise.
 export const _resetPyWorker = async (): Promise<void> => {
   if (!_workerHandle) return;
-  try { await _workerHandle.worker.terminate(); } catch { /* swallow */ }
+  try { _workerHandle.worker.terminate(); } catch { /* swallow */ }
   _workerHandle = undefined;
 };
 

@@ -1,0 +1,17 @@
+{
+  "name": "plastron-simple-os-example",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "plastron-OS — a single index.html that boots to a desktop of app icons (Sheets, Notepad, Doom); clicking one launches it, exit returns home. Built on app-host + the view layer; no new kernel work.",
+  "scripts": {
+    "bundle": "bun bundle.ts",
+    "serve": "bun serve.ts",
+    "test": "bun test desktop.test.ts && bun test sheets.test.ts && bun test browser-main.test.ts && bun test file-explorer.test.ts && bun test doom-app.test.ts",
+    "e2e": "bun e2e/run.ts",
+    "check": "bun build index.html --target=browser --outdir /tmp/os-check --external pyodide --external quickjs-emscripten --external wabt --external node:fs/promises --external node:path"
+  },
+  "devDependencies": {
+    "@types/node": "^25.9.1"
+  }
+}

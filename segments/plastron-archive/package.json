@@ -9,7 +9,6 @@
     "check": "tsc --noEmit"
   },
   "dependencies": {
-    "fflate": "^0.8.2",
     "xit-wasm": "^0.1.0",
     "yaml": "^2.6.0"
   },

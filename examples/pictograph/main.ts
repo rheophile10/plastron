@@ -68,4 +68,14 @@ console.log("👤      :", view("👤"));
 console.log("👦      :", view("👦"));
 console.log("👧      :", view("👧"));
 console.log("👦👋👧 :", view("👦👋👧"));
+
+// Swap a function cel at runtime via `set` — the cel's value is just
+// a JS function, so writing a new function fires the affected-subset
+// cascade and `result` recomputes against the new behaviour.
+const get = 龜甲.fns.get("get") as Fn;
+const set = 龜甲.fns.get("set") as Fn;
+console.log("\nresult (add):", get(龜甲, "result"));
+await set(龜甲, "applyFn", (arr: number[]) => arr[0] * arr[1]);
+console.log("result (mul):", get(龜甲, "result"));
+
 console.log(`\nwrote ${outPath}`);

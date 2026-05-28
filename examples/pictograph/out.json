@@ -1,0 +1,304 @@
+[
+  {
+    "key": "config",
+    "cels": [
+      {
+        "key": "config_performance",
+        "v": {
+          "enabled": false,
+          "trackPrecompute": true,
+          "trackCycles": true,
+          "trackFunctions": true,
+          "trackChannels": true,
+          "trackMemory": true,
+          "sampleRate": 1,
+          "watchCels": [],
+          "includeCelDetail": false
+        },
+        "segment": "config",
+        "schema": "config_performance"
+      },
+      {
+        "key": "config_environment",
+        "v": {
+          "segments": [],
+          "features": {},
+          "tags": {},
+          "runtime": null,
+          "gen": 0
+        },
+        "segment": "config"
+      }
+    ],
+    "schemas": {
+      "config_performance": {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "trackPrecompute": {
+            "type": "boolean"
+          },
+          "trackCycles": {
+            "type": "boolean"
+          },
+          "trackFunctions": {
+            "type": "boolean"
+          },
+          "trackChannels": {
+            "type": "boolean"
+          },
+          "trackMemory": {
+            "type": "boolean"
+          },
+          "sampleRate": {
+            "type": "number"
+          },
+          "watchCels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "includeCelDetail": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled",
+          "trackPrecompute",
+          "trackCycles",
+          "trackFunctions",
+          "trackChannels",
+          "trackMemory",
+          "sampleRate",
+          "watchCels",
+          "includeCelDetail"
+        ],
+        "additionalProperties": {}
+      }
+    },
+    "fnMetaData": {
+      "get": {
+        "key": "get",
+        "locked": true
+      },
+      "set": {
+        "key": "set",
+        "locked": true
+      },
+      "update": {
+        "key": "update",
+        "locked": true
+      },
+      "batch": {
+        "key": "batch",
+        "locked": true
+      },
+      "getCel": {
+        "key": "getCel",
+        "locked": true
+      },
+      "setCel": {
+        "key": "setCel",
+        "locked": true
+      },
+      "getCelBatch": {
+        "key": "getCelBatch",
+        "locked": true
+      },
+      "setCelBatch": {
+        "key": "setCelBatch",
+        "locked": true
+      },
+      "touch": {
+        "key": "touch",
+        "locked": true
+      },
+      "consume": {
+        "key": "consume",
+        "locked": true
+      },
+      "runCycle": {
+        "key": "runCycle",
+        "locked": true
+      },
+      "hydrate": {
+        "key": "hydrate",
+        "locked": true
+      },
+      "dehydrate": {
+        "key": "dehydrate",
+        "locked": true
+      },
+      "flush": {
+        "key": "flush",
+        "locked": true
+      },
+      "drain": {
+        "key": "drain",
+        "locked": true
+      },
+      "registerLambda": {
+        "key": "registerLambda",
+        "locked": true
+      },
+      "resetStats": {
+        "key": "resetStats",
+        "locked": true
+      },
+      "refreshEnvironmentStats": {
+        "key": "refreshEnvironmentStats",
+        "locked": true
+      },
+      "setFeatureFlag": {
+        "key": "setFeatureFlag",
+        "locked": true
+      },
+      "setEnvironmentTag": {
+        "key": "setEnvironmentTag",
+        "locked": true
+      },
+      "syncSegmentsToConfig": {
+        "key": "syncSegmentsToConfig",
+        "locked": true
+      },
+      "freezeRuntimeProfile": {
+        "key": "freezeRuntimeProfile",
+        "locked": true
+      },
+      "compareRuntimeProfile": {
+        "key": "compareRuntimeProfile",
+        "locked": true
+      },
+      "getSegmentManifest": {
+        "key": "getSegmentManifest",
+        "locked": true
+      },
+      "listSegments": {
+        "key": "listSegments",
+        "locked": true
+      },
+      "findDependents": {
+        "key": "findDependents",
+        "locked": true
+      },
+      "refCelByteLength": {
+        "key": "refCelByteLength",
+        "locked": true
+      },
+      "f": {
+        "key": "f",
+        "locked": false
+      }
+    }
+  },
+  {
+    "key": "象形",
+    "cels": [
+      {
+        "key": "👤fn",
+        "v": "() => {\n  class P {\n    constructor({ icon }) { this.icon = icon; }\n    ['👋'](other) { return this.icon + '👋' + other.icon; }\n  }\n  return P;\n}",
+        "segment": "象形",
+        "tag": "fn"
+      },
+      {
+        "key": "🏭",
+        "v": "(Cls, icon) => new Cls({ icon })",
+        "segment": "象形",
+        "tag": "fn"
+      },
+      {
+        "key": "👋fn",
+        "v": "(self, other) => self['👋'](other)",
+        "segment": "象形",
+        "tag": "fn"
+      },
+      {
+        "key": "👤",
+        "v": "class P {\n    constructor({ icon }) { this.icon = icon; }\n    ['👋'](other) { return this.icon + '👋' + other.icon; }\n  }",
+        "l": "f",
+        "inputMap": {
+          "👤fn": "👤fn"
+        },
+        "segment": "象形",
+        "f": "(👤fn)"
+      },
+      {
+        "key": "👦",
+        "v": {
+          "icon": "👦"
+        },
+        "l": "f",
+        "inputMap": {
+          "🏭": "🏭",
+          "👤": "👤"
+        },
+        "segment": "象形",
+        "f": "(🏭 👤 \"👦\")"
+      },
+      {
+        "key": "👧",
+        "v": {
+          "icon": "👧"
+        },
+        "l": "f",
+        "inputMap": {
+          "🏭": "🏭",
+          "👤": "👤"
+        },
+        "segment": "象形",
+        "f": "(🏭 👤 \"👧\")"
+      },
+      {
+        "key": "👦👋👧",
+        "v": "👦👋👧",
+        "l": "f",
+        "inputMap": {
+          "👋fn": "👋fn",
+          "👦": "👦",
+          "👧": "👧"
+        },
+        "segment": "象形",
+        "f": "(👋fn 👦 👧)"
+      },
+      {
+        "key": "pair",
+        "v": [
+          3,
+          4
+        ],
+        "segment": "象形"
+      },
+      {
+        "key": "applyFn",
+        "v": "(arr) => arr[0] + arr[1]",
+        "segment": "象形",
+        "tag": "fn"
+      },
+      {
+        "key": "result",
+        "v": 7,
+        "l": "f",
+        "inputMap": {
+          "applyFn": "applyFn",
+          "pair": "pair"
+        },
+        "segment": "象形",
+        "f": "(applyFn pair)"
+      }
+    ],
+    "manifest": {
+      "segment": "象形",
+      "version": "0.0.1",
+      "description": "Functions live as cels with tag='fn'; main.ts materializes them into\nreal fns at load. Formulas call those fns positionally — emoji symbols\nare auto-wired into inputMap by the formula compiler. No fnMetaData,\nno apply lambda, no icon value cels (icons are string literals in the\nformulas).",
+      "provides": {
+        "celSegments": [
+          "象形"
+        ]
+      }
+    }
+  }
+]

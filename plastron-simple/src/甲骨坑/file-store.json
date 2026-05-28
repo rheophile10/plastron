@@ -1,0 +1,186 @@
+{
+  "name": "file-store",
+  "cels": [
+    {
+      "key": "file-store.opfs-available",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "file-store.opfs-available", "segment": "file-store", "schema": "boolean",
+        "description": "Sync-detected at module load: navigator.storage.getDirectory is callable. Read-only diagnostic; writing does not re-detect."
+      },
+      "locked": true
+    },
+    {
+      "key": "file-store.node-fs-available",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "file-store.node-fs-available", "segment": "file-store", "schema": "boolean",
+        "description": "Sync-detected at module load: process.versions.node is set. Read-only diagnostic."
+      },
+      "locked": true
+    },
+    {
+      "key": "file-store.backend",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "file-store.backend", "segment": "file-store",
+        "description": "Active backend label: 'opfs' | 'node-fs' | 'none'. Picked at module load — OPFS wins if both probes pass. Read-only in Phase A; a future fs.bind fn will reconfigure."
+      },
+      "locked": true
+    },
+    {
+      "key": "file-store.root",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "file-store.root", "segment": "file-store",
+        "description": "Backend-relative root. '' for OPFS (origin root). './.plastron-fs' default for node-fs. Phase A: read-only descriptor of the active singleton."
+      },
+      "locked": true
+    },
+
+    {
+      "key": "fs.exists",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "fs.exists", "segment": "file-store", "name": "fs.exists", "kind": "native",
+        "description": "Async. (path) → boolean. True if the path resolves to any entry under the root."
+      },
+      "locked": true
+    },
+    {
+      "key": "fs.read",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "fs.read", "segment": "file-store", "name": "fs.read", "kind": "native",
+        "description": "Async. (path) → Uint8Array. Throws if missing or if the path is a directory."
+      },
+      "locked": true
+    },
+    {
+      "key": "fs.readText",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "fs.readText", "segment": "file-store", "name": "fs.readText", "kind": "native",
+        "description": "Async. (path) → string. UTF-8 decode of the file's bytes."
+      },
+      "locked": true
+    },
+    {
+      "key": "fs.write",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "fs.write", "segment": "file-store", "name": "fs.write", "kind": "native",
+        "description": "Async. (path, content) → void. content: Uint8Array | string. Overwrites in place; auto-creates missing parent dirs."
+      },
+      "locked": true
+    },
+    {
+      "key": "fs.writeText",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "fs.writeText", "segment": "file-store", "name": "fs.writeText", "kind": "native",
+        "description": "Async. (path, content) → void. UTF-8 encodes string before write; auto-creates parent dirs."
+      },
+      "locked": true
+    },
+    {
+      "key": "fs.delete",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "fs.delete", "segment": "file-store", "name": "fs.delete", "kind": "native",
+        "description": "Async. (path) → void. File only — use fs.rmdir for directories. No-op if missing."
+      },
+      "locked": true
+    },
+    {
+      "key": "fs.mkdir",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "fs.mkdir", "segment": "file-store", "name": "fs.mkdir", "kind": "native",
+        "description": "Async. (path, recursive?) → void. Defaults recursive=true. No-op if the dir already exists."
+      },
+      "locked": true
+    },
+    {
+      "key": "fs.rmdir",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "fs.rmdir", "segment": "file-store", "name": "fs.rmdir", "kind": "native",
+        "description": "Async. (path, recursive?) → void. Defaults recursive=true. No-op if missing."
+      },
+      "locked": true
+    },
+    {
+      "key": "fs.list",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "fs.list", "segment": "file-store", "name": "fs.list", "kind": "native",
+        "description": "Async. (path) → string[]. Child names only (no slashes). Throws if path is not a directory."
+      },
+      "locked": true
+    },
+    {
+      "key": "fs.stat",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "fs.stat", "segment": "file-store", "name": "fs.stat", "kind": "native",
+        "description": "Async. (path) → { size, isDir, mtime }. mtime is ms epoch; OPFS returns 0 for directories."
+      },
+      "locked": true
+    },
+    {
+      "key": "fs.rename",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "fs.rename", "segment": "file-store", "name": "fs.rename", "kind": "native",
+        "description": "Async. (oldPath, newPath) → void. Files and directories. OPFS uses .move() with a read-write-delete fallback for older browsers."
+      },
+      "locked": true
+    },
+
+    {
+      "key": "file-binary",
+      "celType": "SchemaCel",
+      "metadata": { "key": "file-binary", "segment": "file-store" },
+      "v": {
+        "key": "file-binary",
+        "zod": {
+          "description": "Raw file bytes. JSON Schema can't express Uint8Array natively; this schema's identity is the protocol set, not the zod fragment.",
+          "type": "object"
+        },
+        "protocols": {
+          "size":      "file-binary_size",
+          "isChanged": "file-binary_isChanged",
+          "mime":      "file-binary_mime"
+        }
+      }
+    },
+    {
+      "key": "file-binary_size",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "file-binary_size", "segment": "file-store", "kind": "native",
+        "description": "size protocol for file-binary. (v) → number. Returns v.length when v is Uint8Array, 0 otherwise."
+      },
+      "locked": true
+    },
+    {
+      "key": "file-binary_isChanged",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "file-binary_isChanged", "segment": "file-store", "kind": "native",
+        "description": "isChanged protocol for file-binary. (oldV, newV) → boolean. Byte-by-byte compare; short-circuits on length mismatch."
+      },
+      "locked": true
+    },
+    {
+      "key": "file-binary_mime",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "file-binary_mime", "segment": "file-store", "kind": "native",
+        "description": "mime protocol for file-binary. (v) → string. Returns 'application/octet-stream' — specialized schemas (file-image, file-doc-*) in Phase B override per type."
+      },
+      "locked": true
+    }
+  ]
+}

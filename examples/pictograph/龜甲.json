@@ -32,6 +32,10 @@
     { "key": "👤",      "f": "(👤fn)",            "segment": "象形" },
     { "key": "👦",      "f": "(🏭 👤 \"👦\")",     "segment": "象形" },
     { "key": "👧",      "f": "(🏭 👤 \"👧\")",     "segment": "象形" },
-    { "key": "👦👋👧", "f": "(👋fn 👦 👧)",       "segment": "象形" }
+    { "key": "👦👋👧", "f": "(👋fn 👦 👧)",       "segment": "象形" },
+
+    { "key": "pair",    "v": [3, 4],                                "segment": "象形" },
+    { "key": "applyFn", "tag": "fn", "v": "(arr) => arr[0] + arr[1]", "segment": "象形" },
+    { "key": "result",  "f": "(applyFn pair)",                       "segment": "象形" }
   ]
 }

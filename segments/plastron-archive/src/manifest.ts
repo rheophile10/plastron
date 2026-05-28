@@ -27,7 +27,11 @@ export const SEGMENTS_DIR = "segments" as const;
  *  is always JSON — it's a small, machine-shaped table of contents.
  *  Segment payloads are the bulky human-edited surface, and YAML is the
  *  cleaner choice when cels hold multi-line strings (e.g. Python source
- *  on a LambdaMetadata) that you want to diff line-by-line in git. */
+ *  on a LambdaMetadata) that you want to diff line-by-line in git.
+ *
+ *  Round-trip fidelity: JSON is byte-perfect for any valid UTF-16 string.
+ *  YAML 1.2 normalizes line breaks in block scalars to `\n` on parse, so
+ *  CRLF-authored source becomes LF after a round-trip on the YAML path. */
 export type SegmentFormat = "json" | "yaml";
 
 /** Default segment format. Stays "json" to match the historical archive
@@ -47,3 +51,24 @@ export interface ArchiveManifest {
    *  hydrate order. */
   segments: string[];
 }
+
+// Reject keys that would produce confusing or unsafe filenames inside
+// the zip. `/` and `\` would create unintended subdirectories; leading
+// dots collide with `.` / `..`; NUL terminates C-strings. Enforced
+// symmetrically by export (refuses to write) and import (refuses to
+// read) so a hand-crafted manifest can't smuggle a path-traversal key
+// past the storage layer.
+export const validateSegmentKey = (key: string): void => {
+  if (
+    typeof key !== "string" ||
+    key === "" ||
+    key.includes("/") || key.includes("\\") ||
+    key.includes("\0") ||
+    key.startsWith(".")
+  ) {
+    throw new Error(
+      `Segment key ${JSON.stringify(key)} is not safe as a filename. ` +
+      `Avoid /, \\, NUL bytes, and leading dots.`,
+    );
+  }
+};

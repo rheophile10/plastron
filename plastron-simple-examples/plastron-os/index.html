@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>plastron OS</title>
+    <style>
+      :root { color-scheme: light dark; }
+      * { box-sizing: border-box; }
+      body { margin: 0; font: 15px/1.5 system-ui, sans-serif; }
+      #app { min-height: 100vh; }
+
+      /* home screen */
+      .home { padding: 2.5rem 1.5rem; max-width: 48rem; margin: 0 auto; }
+      .home h1 { font-size: 1.6rem; margin: 0 0 1.5rem; }
+      .icons { display: grid; grid-template-columns: repeat(auto-fill, minmax(7rem, 1fr)); gap: 1rem; }
+      .icon {
+        display: flex; flex-direction: column; align-items: center; gap: .5rem;
+        font: inherit; font-size: 1rem; padding: 1.25rem .5rem; cursor: pointer;
+        border: 1px solid #8884; border-radius: .75rem; background: #8881;
+      }
+      .icon:hover { background: #8883; }
+      .icon { font-size: 2rem; }              /* the emoji */
+      .icon { line-height: 1.2; }
+
+      /* shared app chrome */
+      .toolbar { display: flex; align-items: center; gap: .5rem; padding: .5rem .75rem; border-bottom: 1px solid #8884; }
+      .toolbar button { font: inherit; cursor: pointer; padding: .3rem .6rem; border: 1px solid #8884; border-radius: .4rem; background: #8881; }
+
+      /* close button — overlays each app window's upper-right corner */
+      .np, .doom, .sheet-app, .fe { position: relative; }
+      .close {
+        position: absolute; top: .35rem; right: .5rem; z-index: 2;
+        font: inherit; line-height: 1; cursor: pointer;
+        padding: .2rem .55rem; border: 1px solid #d33; border-radius: .35rem;
+        background: #d33; color: #fff;
+      }
+      .close:hover { background: #b22; border-color: #b22; }
+      .cellref { font-variant-numeric: tabular-nums; font-weight: 600; min-width: 2.5rem; }
+
+      /* sheets */
+      .sheet-app .fx { flex: 1; font: inherit; padding: .3rem .5rem; }
+      table.sheet { border-collapse: collapse; width: 100%; font-variant-numeric: tabular-nums; }
+      table.sheet th, table.sheet td { border: 1px solid #8883; padding: .3rem .5rem; min-width: 3.5rem; text-align: left; }
+      table.sheet thead th, table.sheet .rownum { background: #8881; text-align: center; color: #888; font-weight: 600; }
+      table.sheet td.cell { cursor: cell; }
+      table.sheet td.selected { outline: 2px solid #4a90d9; outline-offset: -2px; }
+
+      .sheet-app .meta-panel { padding: .5rem .75rem; border-top: 1px solid #8884; }
+      .sheet-app .meta-panel h4 { margin: 0 0 .25rem; font-size: .9rem; color: #888; }
+      .sheet-app .meta { background: #8881; padding: .5rem; border-radius: .4rem; font: 12px/1.45 ui-monospace, monospace; overflow: auto; max-height: 14rem; margin: 0; }
+
+      /* shared file toolbar */
+      .file-toolbar { display: flex; align-items: center; gap: .4rem; padding: .35rem .6rem; border-bottom: 1px solid #8884; background: #8881; }
+      .file-toolbar .doc-name { margin-left: auto; color: #888; font-size: .85rem; font-variant-numeric: tabular-nums; }
+
+      /* notepad */
+      .np .pad { width: 100%; height: 65vh; border: 0; padding: 1rem; font: inherit; resize: none; }
+
+      /* file explorer v2 — folders + drag-and-drop */
+      .fe .toolbar { display: flex; align-items: center; gap: .5rem; padding: .5rem .75rem; border-bottom: 1px solid #8884; flex-wrap: wrap; }
+      .fe .toolbar .title { font-weight: 600; }
+      .fe .toolbar .mkdir { margin-left: auto; font: inherit; padding: .25rem .6rem; border: 1px solid #8884; border-radius: .4rem; background: transparent; cursor: pointer; }
+      .fe .toolbar .mkdir:hover { background: #8881; }
+      .fe .breadcrumb-host { display: inline-flex; align-items: center; gap: .25rem; flex: 1 1 auto; min-width: 0; overflow: hidden; }
+      .fe .crumb { font: inherit; padding: .15rem .4rem; border: 0; background: transparent; cursor: pointer; color: inherit; border-radius: .3rem; }
+      .fe .crumb:hover { background: #8881; }
+      .fe .sep { color: #888; padding: 0 .1rem; }
+      .fe .explorer-grid { padding: 1rem; display: grid; gap: .75rem; grid-template-columns: repeat(auto-fill, minmax(160px, 1fr)); }
+      .fe .card { display: flex; flex-direction: column; align-items: flex-start; gap: .25rem; padding: .9rem .75rem; border: 1px solid #8884; border-radius: .5rem; background: transparent; font: inherit; cursor: pointer; text-align: left; word-break: break-word; min-height: 3rem; }
+      .fe .card:hover { background: #8881; }
+      .fe .card.folder { background: #ffd75933; }
+      .fe .card.folder:hover { background: #ffd75955; }
+      .fe .card.up { background: #8881; }
+      .fe .card.file { cursor: grab; }
+      .fe .card.file:active { cursor: grabbing; }
+      .fe .card.file small { color: #888; font-size: .8rem; }
+      .fe .empty { grid-column: 1 / -1; padding: 2rem; color: #888; text-align: center; }
+
+      /* doom placeholder */
+      .doom .soon { padding: 2rem; color: #888; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="./browser-main.ts"></script>
+  </body>
+</html>

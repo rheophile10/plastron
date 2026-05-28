@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test } from "bun:test";
 import assert from "node:assert/strict";
 import { createInitialState, resolveFn } from "../dist/index.js";
 
@@ -36,26 +36,30 @@ test("builtin cels carry impls matching the old hardcoded BUILTINS table", () =>
   assert.equal(plus("1", "2"), 3); // Number() coercion preserved
 });
 
-test("flushing the builtins segment removes the cels and slow-path formula evaluation errors cleanly", async () => {
+test("flush refuses builtins (kernel-closure protection from chunk A)", async () => {
+  // Pre-chunk-A: flushing builtins with { force: true } removed its cels;
+  // this test asserted the resulting "slow path errors cleanly" behavior.
+  //
+  // Post-chunk-A (segment-classification, 2026-05-24): builtins is a
+  // dependency of the kernel manifest, so it's in the boot kernel
+  // closure — unflushable regardless of `{ force: true }`. The test
+  // now asserts the new contract: flush throws, cels survive, formula
+  // evaluation continues to work.
+  //
+  // See 1-design/3-accepted/00-ontology/segment-classification.md
+  // "Multi-segment kernel".
   const state = createInitialState();
   const flush         = resolveFn(state, "flush");
   const compileFormula = resolveFn(state, "f");
 
-  // Sanity: while installed, the slow path resolves "+" through inputs.
   const before = compileFormula("(+ a b)");
   assert.equal(before.fn({ "+": state.cels.get("+")._fn, a: 1, b: 2 }), 3);
 
-  // Force because the kernel manifest declares builtins as a dep.
-  await flush(state, "builtins", { force: true });
-  for (const k of OPS) {
-    assert.equal(state.cels.get(k), undefined, `cel "${k}" should be gone after flush`);
-  }
-
-  // With "+" no longer in inputs, the slow path now errors cleanly
-  // instead of silently succeeding via the old hardcoded BUILTINS table.
-  const after = compileFormula("(+ 1 2)");
-  assert.throws(
-    () => after.fn({}),
-    /Formula references "\+" but it isn't a function\./,
+  await assert.rejects(
+    flush(state, "builtins", { force: true }),
+    /kernel closure/,
   );
+  for (const k of OPS) {
+    assert.ok(state.cels.get(k), `cel "${k}" should survive — builtins is in kernel closure`);
+  }
 });

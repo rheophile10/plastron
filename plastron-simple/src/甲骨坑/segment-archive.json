@@ -1,0 +1,50 @@
+{
+  "name": "segment-archive",
+  "cels": [
+    {
+      "key": "segment-archive.export-all",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "segment-archive.export-all", "segment": "segment-archive", "kind": "native",
+        "description": "(state) → Promise<Uint8Array>. Pack every loaded segment outside the kernel closure into a role-foldered .zip (applications/ libraries/ user/). The bundled kernel is excluded; its deps resolve on import."
+      },
+      "locked": true
+    },
+    {
+      "key": "segment-archive.export-application",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "segment-archive.export-application", "segment": "segment-archive", "kind": "native",
+        "description": "(state, name) → Promise<Uint8Array>. Pack an application segment + its transitive library deps (self-contained, runnable), kernel excluded."
+      },
+      "locked": true
+    },
+    {
+      "key": "segment-archive.export-library",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "segment-archive.export-library", "segment": "segment-archive", "kind": "native",
+        "description": "(state, name) → Promise<Uint8Array>. Pack a library segment + its transitive library deps (self-contained), kernel excluded."
+      },
+      "locked": true
+    },
+    {
+      "key": "segment-archive.export-user",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "segment-archive.export-user", "segment": "segment-archive", "kind": "native",
+        "description": "(state, name) → Promise<Uint8Array>. Pack a user-space + its private (role:user-space) deps only; shared libraries and the application are referenced, not packed (expected present on import)."
+      },
+      "locked": true
+    },
+    {
+      "key": "segment-archive.import",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "segment-archive.import", "segment": "segment-archive", "kind": "native",
+        "description": "(state, bytes: Uint8Array, opts?: { onlyRoles?: Role[] }) → Promise<State>. Unzip a .甲 archive and hydrate its segments, skipping the kernel closure. opts.onlyRoles restricts to specific roles (tiered import — e.g. just user-spaces from a full workspace)."
+      },
+      "locked": true
+    }
+  ]
+}

@@ -1,0 +1,12 @@
+{
+  "name": "plastron-simple-keyboard-example",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Musical keyboard demo for plastron's sound segment. QWERTY → notes via sound.play-tone — the same segment the doom example routes SFX through.",
+  "scripts": {
+    "bundle": "bun build index.html --target=browser --outdir dist --external pyodide --external quickjs-emscripten --external wabt --external node:fs/promises --external node:path",
+    "serve": "bun serve.ts",
+    "dev": "bun run bundle && bun run serve"
+  }
+}

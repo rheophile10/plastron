@@ -3,6 +3,7 @@ import type { Channel } from "./channels.js";
 import type { Fn, ResolvedInputs } from "./lambdas.js";
 import type { 譜 } from "./譜.js";
 import type { Schema } from "./schemas.js";
+import type { MemoCache, MemoConfig } from "./hooks.js";
 
 import type { ValueCel } from "./value.js";
 import type { ChannelCel } from "./channels.js";
@@ -31,6 +32,18 @@ export interface ComputeCelMetadata extends BaseCelMetadata {
    *  preserving the v1 behavior for cels that don't opt in. The kind
    *  string is a regular Key — same name space as kindOf returns. */
   inputKinds?: Record<string, Key>;
+  /** Cel keys whose _fn runs as a reducer over an ExecutionAccumulator
+   *  before this cel's _fn. A pre-fn may set acc.output to short-circuit
+   *  _fn (used by L2 cache strategies). See docs/1-design/3-accepted/03-caching/execution-hooks.md. */
+  preFns?: Key[];
+  /** Cel keys whose _fn runs as a reducer after this cel's _fn (or
+   *  after a pre-fn short-circuit). Used by perf trackers, L2 cache
+   *  write-backs, telemetry, audit logging. */
+  postFns?: Key[];
+  /** When present, enables L1 in-memory memoization for this cel.
+   *  Eligibility checked at hydrate: refused for dynamic cels and for
+   *  cels whose input schemas lack memoSafe: true. */
+  memo?: MemoConfig;
 }
 
 /** Loose union shape kept for DehydratedCel and inflate-time
@@ -77,6 +90,11 @@ export interface ComputeCel extends BaseCel {
   _dispose?: () => void;
   _inputEntries?: Array<[string, Cel | undefined | Array<Cel | undefined>]>;
   _channelHandlers?: Channel[];
+  /** L1 memo cache. Populated at hydrate when metadata.memo is set and
+   *  the eligibility check passes. Reference-keyed over the cel's
+   *  inputs (resolved inputMap values for FormulaCel; positional call
+   *  args for LambdaCel). Implementation: kernel/memo-cache.ts. */
+  _memoCache?: MemoCache;
   _buildEvaluate?: (
     inputs: ResolvedInputs,
     cspEvalAvailable: boolean,
@@ -97,7 +115,14 @@ export interface DehydratedCel {
   wave?: number;
   locked?: boolean;
   dynamic?: boolean;
-  f?: string;
+  /** Source body for fireable cels. Accepts string OR string[]; the
+   *  array form is a hand-authoring convenience for multi-line source
+   *  that inflateCel always collapses into a single \n-joined string —
+   *  no schema needed on the input side. On dehydrate, opt-in via
+   *  `cel.schema.protocols.sourceDehydrate` (see the built-in
+   *  `lambda-source` schema) can split it back out for readability.
+   *  Live ComputeCel.f is always a single string. */
+  f?: string | string[];
 }
 
 export type Cel =

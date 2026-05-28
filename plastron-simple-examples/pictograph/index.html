@@ -1,0 +1,27 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>plastron — single-file demo</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        font: 15px/1.5 system-ui, sans-serif;
+        max-width: 32rem; margin: 3rem auto; padding: 0 1rem;
+      }
+      h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+      .sub { color: #888; margin: 0 0 1.5rem; }
+      .inputs { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: .75rem; margin-bottom: 1.5rem; }
+      .inputs label { display: flex; flex-direction: column; font-size: .8rem; color: #888; gap: .25rem; }
+      .inputs input { font: inherit; padding: .4rem .5rem; }
+      table { border-collapse: collapse; width: 100%; }
+      th, td { text-align: left; padding: .4rem .6rem; border-bottom: 1px solid #8884; }
+      td.num, th:last-child { text-align: right; font-variant-numeric: tabular-nums; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="./browser-main.ts"></script>
+  </body>
+</html>

@@ -1,0 +1,50 @@
+{
+  "name": "segment-store",
+  "cels": [
+    {
+      "key": "store.put",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "store.put", "segment": "segment-store", "name": "store.put", "kind": "native",
+        "description": "Async. (name, version, manifest, segment) -> void. Writes plastron/segments/<name>/<version>/{manifest,segment}.json then updates plastron/index.json atomically (tmp-file + rename). Overwrites an existing version in place (no history). Throws on invalid name/version, missing version, or manifest.role==='kernel'."
+      },
+      "locked": true
+    },
+    {
+      "key": "store.get",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "store.get", "segment": "segment-store", "name": "store.get", "kind": "native",
+        "description": "Async. (name, version?) -> { manifest, segment } | undefined. version defaults to the index's latest. Returns undefined when the name (or requested version) is not in the index."
+      },
+      "locked": true
+    },
+    {
+      "key": "store.list",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "store.list", "segment": "segment-store", "name": "store.list", "kind": "native",
+        "description": "Async. () -> { name, latest }[]. Reads plastron/index.json and returns one summary row per stored segment. Empty array when nothing is stored."
+      },
+      "locked": true
+    },
+    {
+      "key": "store.delete",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "store.delete", "segment": "segment-store", "name": "store.delete", "kind": "native",
+        "description": "Async. (name, version?) -> void. Removes the per-version directory and updates the index: drops that version, repoints latest to the most-recent remaining, or removes the segment entry entirely when none remain. version defaults to latest."
+      },
+      "locked": true
+    },
+    {
+      "key": "store.has",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "store.has", "segment": "segment-store", "name": "store.has", "kind": "native",
+        "description": "Async. (name) -> boolean. Index lookup only; no payload read. True when the name has at least one stored version."
+      },
+      "locked": true
+    }
+  ]
+}

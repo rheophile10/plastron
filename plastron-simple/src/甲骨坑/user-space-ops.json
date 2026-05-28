@@ -1,0 +1,50 @@
+{
+  "name": "user-space-ops",
+  "cels": [
+    {
+      "key": "newUserSpace",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "newUserSpace", "segment": "user-space-ops", "name": "newUserSpace", "kind": "native",
+        "description": "Async. (state, name, applicationName, options?) -> manifest. Create a fresh empty user-space (role:'user-space', applications:[applicationName], dependencies:[applicationName, ...extraDeps]) and hydrate it into state. Throws if applicationName isn't a loaded role:'application' segment, or if name collides with a loaded segment / a stored segment (unless options.overwrite). autoSave defaults true (persists to segment-store immediately); pass { autoSave: false } for a preview-without-commit flow."
+      },
+      "locked": true
+    },
+    {
+      "key": "saveUserSpace",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "saveUserSpace", "segment": "user-space-ops", "name": "saveUserSpace", "kind": "native",
+        "description": "Async. (state, name) -> Key[] (persisted segment names). Dehydrate the user-space + its PRIVATE closure (role:'user-space' deps whose applications array is a subset of this user-space's) and write each via segment-store.put. Library/application/kernel deps are excluded — they ship with the distribution, not the user's saved data. Throws if name isn't a loaded role:'user-space' segment."
+      },
+      "locked": true
+    },
+    {
+      "key": "loadUserSpace",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "loadUserSpace", "segment": "user-space-ops", "name": "loadUserSpace", "kind": "native",
+        "description": "Async. (state, name, version?) -> manifest. Open an existing user-space from segment-store, auto-starting its parent application (applications[0]) via hydrateClosure if not already loaded, then hydrating the user-space's own closure. Idempotent: reopening a loaded user-space is a cheap no-op. version defaults to latest. Throws if name isn't found or isn't role:'user-space'."
+      },
+      "locked": true
+    },
+    {
+      "key": "closeUserSpace",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "closeUserSpace", "segment": "user-space-ops", "name": "closeUserSpace", "kind": "native",
+        "description": "Async. (state, name) -> void. Tear down a user-space + its private deps (dependents-first / root-first flush order so each flush's dependent-check passes), WITHOUT saving (close != save; the host composes save-before-close UX) and WITHOUT evicting shared library deps (they stay loaded for the next user-space in the same application session). Throws if name isn't a loaded role:'user-space' segment."
+      },
+      "locked": true
+    },
+    {
+      "key": "hydrate-closure",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "hydrate-closure", "segment": "user-space-ops", "name": "hydrate-closure", "kind": "native",
+        "description": "Async. (state, rootName, version?) -> Key[] (newly-loaded segment names). The shared read-walk-topo-hydrate pipeline: BFS the segment-store from rootName collecting its transitive dependency closure, filter out segments already loaded, topo-order the remainder (deps first), and hydrate them in one call. Idempotent (whole closure already loaded -> []). Reused by loadUserSpace, application auto-start, and (future) optional-segment-loading's loadSegment."
+      },
+      "locked": true
+    }
+  ]
+}

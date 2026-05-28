@@ -8,6 +8,14 @@ export interface LambdaCelMetadata extends ComputeCelMetadata {
   filename?: string;
   inputSchema?: Key;
   outputSchema?: Key;
+  /** kind:"wasm" only — which module export to expose as the cel's Fn.
+   *  Absent → the compiler's export ladder (prefer "main", else the
+   *  single export, else error). See wasm-bytes segment. */
+  wasmExport?: string;
+  /** kind:"wasm" only — cel key of an imports-provider fn `(state) =>
+   *  WebAssembly imports object`. Merged over the default `{ host }`
+   *  namespace at instantiate (WASI / env shims). Absent → host only. */
+  imports?: Key;
 }
 
 export interface EditableLambdaCel extends ComputeCel {
@@ -57,6 +65,14 @@ export type CompiledLambda = Fn | CompiledEnvelope;
  *  ignore the context. */
 export interface CompileContext {
   outputSchema?: import("./wit.js").WitType;
+  /** kind:"wasm" — the named export the cel exposes (from
+   *  metadata.wasmExport). The wasm-bytes compiler selects this export
+   *  instead of running its prefer-"main" ladder. */
+  wasmExport?: string;
+  /** kind:"wasm" — cel key of an imports-provider fn (from
+   *  metadata.imports). The wasm-bytes compiler calls it to obtain the
+   *  WebAssembly imports object for instantiation. */
+  imports?: Key;
 }
 
 export interface Compiler extends Fn {

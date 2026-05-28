@@ -1,8 +1,9 @@
-import type { Cel, ChannelCel, FireableCel, Fn, Key, State } from "../types/index.js";
+import type { Cel, ChannelCel, ComputeCel, FireableCel, Fn, Key, State } from "../types/index.js";
 import { isFireable } from "../types/index.js";
 import { PRECOMPUTED_STATES_KEY, bfsDownstream, type PrecomputedIndexes } from "./precompute/index.js";
 import { resolveFn } from "./resolve-fn.js";
 import { appendError, makeCelError } from "../甲骨坑/cel-error.js";
+import { deriveCacheKeysFromInputMap, hasHooksOrCache, runHookedExecution } from "./hooks.js";
 
 // Route a changed compute cel onto every channel handler. Fast path
 // reads cel._channelHandlers; fallback resolves channels via the
@@ -23,6 +24,32 @@ const enqueueChannels = (cel: FireableCel, state: State): void => {
 
 const readIndexes = (state: State): PrecomputedIndexes | undefined =>
   state.cels.get(PRECOMPUTED_STATES_KEY)?.v as PrecomputedIndexes | undefined;
+
+const resolveInputs = (cel: FireableCel, state: State): Record<string, unknown> => {
+  const inputs: Record<string, unknown> = {};
+  if (cel._inputEntries) {
+    for (const [name, cs] of cel._inputEntries) {
+      if (cs === undefined) inputs[name] = undefined;
+      else if (Array.isArray(cs)) inputs[name] = cs.map((c) => c?.v);
+      else inputs[name] = cs.v;
+    }
+    return inputs;
+  }
+  if (cel.metadata.inputMap) {
+    for (const [name, refKey] of Object.entries(cel.metadata.inputMap)) {
+      if (Array.isArray(refKey)) {
+        const arr: unknown[] = new Array(refKey.length);
+        for (let i = 0; i < refKey.length; i++) {
+          arr[i] = state.cels.get(refKey[i])?.v;
+        }
+        inputs[name] = arr;
+      } else {
+        inputs[name] = state.cels.get(refKey)?.v;
+      }
+    }
+  }
+  return inputs;
+};
 
 const fireCel = (
   state: State,
@@ -61,6 +88,28 @@ const fireCel = (
     if (!shouldFire) return;
   }
 
+  // Hooked path: when the cel has _memoCache or pre/post-fns, all
+  // execution funnels through the hook reducer. Always async (hook fns
+  // may be async); errors flow through the accumulator's `acc.error`
+  // and are caught here for trap-as-value translation.
+  if (hasHooksOrCache(cel as ComputeCel)) {
+    const inputs = resolveInputs(cel, state);
+    const cacheKeys = deriveCacheKeysFromInputMap(cel as ComputeCel, inputs);
+    const runFn = (): unknown => {
+      if (cel.celType === "FormulaCel" && cel._evaluate) return cel._evaluate();
+      return fn(inputs);
+    };
+    return runHookedExecution(state, cel as ComputeCel, { inputs, cacheKeys, runFn }).then(
+      (newV) => { finishFireSync(state, cel, newV, suppression, changed); },
+      (e) => {
+        const ce = makeCelError([cel.metadata.key], "RuntimeError", e);
+        appendError(state, ce);
+        finishFireSync(state, cel, ce, suppression, changed);
+      },
+    );
+  }
+
+  // Fast path — original unhooked behavior.
   // Trap-as-value: any throw from _evaluate or the slow-path fn becomes a
   // CelError stored on cel.v. The cascade keeps going; downstream cels
   // see the error value and either propagate it (most ops will NaN /
@@ -72,31 +121,7 @@ const fireCel = (
     if (cel.celType === "FormulaCel" && cel._evaluate) {
       fnResult = cel._evaluate();
     } else {
-      const inputs: Record<string, unknown> = {};
-      if (cel._inputEntries) {
-        for (const [name, cs] of cel._inputEntries) {
-          if (cs === undefined) {
-            inputs[name] = undefined;
-          } else if (Array.isArray(cs)) {
-            inputs[name] = cs.map((c) => c?.v);
-          } else {
-            inputs[name] = cs.v;
-          }
-        }
-      } else if (cel.metadata.inputMap) {
-        for (const [name, refKey] of Object.entries(cel.metadata.inputMap)) {
-          if (Array.isArray(refKey)) {
-            const arr: unknown[] = new Array(refKey.length);
-            for (let i = 0; i < refKey.length; i++) {
-              arr[i] = state.cels.get(refKey[i])?.v;
-            }
-            inputs[name] = arr;
-          } else {
-            inputs[name] = state.cels.get(refKey)?.v;
-          }
-        }
-      }
-      fnResult = fn(inputs);
+      fnResult = fn(resolveInputs(cel, state));
     }
   } catch (e) {
     const ce = makeCelError([cel.metadata.key], "RuntimeError", e);

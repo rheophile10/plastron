@@ -1,0 +1,23 @@
+{
+  "name": "lambda-source",
+  "cels": [
+    {
+      "key": "lambda-source",
+      "celType": "SchemaCel",
+      "metadata": { "key": "lambda-source", "segment": "lambda-source" },
+      "v": {
+        "key": "lambda-source",
+        "zod": { "type": "string" },
+        "protocols": {
+          "sourceDehydrate": "lambda-source.split"
+        }
+      }
+    },
+    {
+      "key": "lambda-source.split",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "lambda-source.split", "segment": "lambda-source", "kind": "native" },
+      "locked": true
+    }
+  ]
+}

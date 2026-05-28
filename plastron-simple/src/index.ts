@@ -16,12 +16,25 @@ import * as csp             from "./甲骨坑/csp.js";
 import * as celError        from "./甲骨坑/cel-error.js";
 import * as host            from "./甲骨坑/host.js";
 import * as wasmTypes       from "./甲骨坑/wasm-types.js";
+import * as lambdaSource    from "./甲骨坑/lambda-source.js";
 import * as jsCommonSchema  from "./甲骨坑/js-common-schema.js";
 import * as jsCompiler      from "./甲骨坑/js-compiler.js";
 import * as builtins        from "./甲骨坑/builtins.js";
 import * as watCompiler     from "./甲骨坑/wat-compiler.js";
+import * as wasmBytes       from "./甲骨坑/wasm-bytes.js";
 import * as pyCompiler      from "./甲骨坑/py-compiler.js";
 import * as quickjsCompiler from "./甲骨坑/quickjs-compiler.js";
+import * as fileStore       from "./甲骨坑/file-store.js";
+import * as htmlTemplate    from "./甲骨坑/html-template-parser.js";
+import * as plastronDom     from "./甲骨坑/plastron-dom.js";
+import * as segmentStore    from "./甲骨坑/segment-store.js";
+import * as opfsSeeding     from "./甲骨坑/opfs-seeding.js";
+import * as cliSegmentExport from "./甲骨坑/cli-segment-export.js";
+import * as sheet           from "./甲骨坑/sheet.js";
+import * as userSpaceOps    from "./甲骨坑/user-space-ops.js";
+import * as segmentArchive  from "./甲骨坑/segment-archive.js";
+import * as appHost         from "./甲骨坑/app-host.js";
+import * as sound           from "./甲骨坑/sound.js";
 
 // ============================================================================
 // Boot dispatch — 冊.json drives which segments install. Each named
@@ -44,12 +57,25 @@ const segmentLoaders: Record<Key, () => Cel[]> = {
   "cel-error":        () => [...celError.cels],
   "host":             () => [...host.cels],
   "wasm-types":       () => [...wasmTypes.cels],
+  "lambda-source":    () => [...lambdaSource.cels],
   "js-common-schema": () => [...jsCommonSchema.cels],
   "js-compiler":      () => [...jsCompiler.cels],
   "builtins":         () => [...builtins.cels],
   "wat-compiler":     () => [...watCompiler.cels],
+  "wasm-bytes":       () => [...wasmBytes.cels],
   "py-compiler":      () => [...pyCompiler.cels],
   "quickjs-compiler": () => [...quickjsCompiler.cels],
+  "file-store":       () => [...fileStore.cels],
+  "html-template-parser": () => [...htmlTemplate.cels],
+  "plastron-dom":     () => [...plastronDom.cels],
+  "segment-store":    () => [...segmentStore.cels],
+  "opfs-seeding":     () => [...opfsSeeding.cels],
+  "cli-segment-export": () => [...cliSegmentExport.cels],
+  "sheet":            () => [...sheet.cels],
+  "user-space-ops":   () => [...userSpaceOps.cels],
+  "segment-archive":  () => [...segmentArchive.cels],
+  "app-host":         () => [...appHost.cels],
+  "sound":            () => [...sound.cels],
 };
 
 const seedManifests: ReadonlyArray<冊> = manifestSeed as unknown as 冊[];
@@ -88,3 +114,7 @@ export { resolveFn } from "./kernel/resolve-fn.js";
 export { isFireable, kindOf } from "./types/cels.js";
 export { isWitPrimitive, isWasmHandle } from "./types/wit.js";
 export { isCelError, makeCelError } from "./甲骨坑/cel-error.js";
+export { buildSheet } from "./甲骨坑/sheet.js";
+export { buildNotepad, installNotepadActions } from "./甲骨坑/notepad/build.js";
+export { buildWebEditor, installWebEditorActions, COUNTER_EXAMPLE, WEATHER_EXAMPLE } from "./甲骨坑/web-editor/build.js";
+export { createPainter, getPainter, setPainter } from "./甲骨坑/plastron-dom.js";

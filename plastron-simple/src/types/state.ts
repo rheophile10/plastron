@@ -15,7 +15,20 @@ export type Hydrate = (
   manifests: 冊[],
 ) => Promise<State>;
 
-export type Dehydrate = (state: State) => { segments: 甲骨[]; manifests: 冊[] };
+export interface DehydrateOptions {
+  /** When set, restrict output to these segment names. Cels whose
+   *  `metadata.segment` is in this set are emitted; manifests are
+   *  filtered to the same set (plus any stub manifests for observed
+   *  segments without a registered 冊). Default = emit everything
+   *  except "kernel" (the boot-seeded fns that re-seed at
+   *  createInitialState). */
+  onlySegments?: Key[];
+}
+
+export type Dehydrate = (
+  state: State,
+  opts?: DehydrateOptions,
+) => { segments: 甲骨[]; manifests: 冊[] };
 
 // Readable/writable body of a fireable cel: its value and (optionally)
 // its formula source. Compiler selection lives on cel.metadata

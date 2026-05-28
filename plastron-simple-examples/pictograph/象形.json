@@ -1,0 +1,396 @@
+{
+  "segments": [
+    {
+      "name": "象形",
+      "cels": [
+        {
+          "key": "👤fn",
+          "celType": "EditableLambdaCel",
+          "metadata": {
+            "key": "👤fn",
+            "segment": "象形",
+            "kind": "js",
+            "schema": "lambda-source"
+          },
+          "f": [
+            "() => {",
+            "  class P {",
+            "    constructor({ icon }) { this.icon = icon; }",
+            "    ['👋'](other) { return this.icon + '👋' + other.icon; }",
+            "  }",
+            "  return P;",
+            "}"
+          ]
+        },
+        {
+          "key": "🏭",
+          "celType": "EditableLambdaCel",
+          "metadata": {
+            "key": "🏭",
+            "segment": "象形",
+            "kind": "js"
+          },
+          "f": "(Cls, icon) => new Cls({ icon })"
+        },
+        {
+          "key": "👋fn",
+          "celType": "EditableLambdaCel",
+          "metadata": {
+            "key": "👋fn",
+            "segment": "象形",
+            "kind": "js"
+          },
+          "f": "(self, other) => self['👋'](other)"
+        },
+        {
+          "key": "👤",
+          "celType": "FormulaCel",
+          "metadata": {
+            "key": "👤",
+            "segment": "象形",
+            "parser": "f",
+            "inputMap": {
+              "👤fn": "👤fn"
+            }
+          },
+          "f": "(👤fn)"
+        },
+        {
+          "key": "👦",
+          "celType": "FormulaCel",
+          "metadata": {
+            "key": "👦",
+            "segment": "象形",
+            "parser": "f",
+            "inputMap": {
+              "🏭": "🏭",
+              "👤": "👤"
+            },
+            "v": {
+              "icon": "👦"
+            }
+          },
+          "f": "(🏭 👤 \"👦\")"
+        },
+        {
+          "key": "👧",
+          "celType": "FormulaCel",
+          "metadata": {
+            "key": "👧",
+            "segment": "象形",
+            "parser": "f",
+            "inputMap": {
+              "🏭": "🏭",
+              "👤": "👤"
+            },
+            "v": {
+              "icon": "👧"
+            }
+          },
+          "f": "(🏭 👤 \"👧\")"
+        },
+        {
+          "key": "👦👋👧",
+          "celType": "FormulaCel",
+          "metadata": {
+            "key": "👦👋👧",
+            "segment": "象形",
+            "parser": "f",
+            "inputMap": {
+              "👋fn": "👋fn",
+              "👦": "👦",
+              "👧": "👧"
+            },
+            "v": "👦👋👧"
+          },
+          "f": "(👋fn 👦 👧)"
+        },
+        {
+          "key": "pair",
+          "celType": "ValueCel",
+          "metadata": {
+            "key": "pair",
+            "segment": "象形",
+            "v": [
+              3,
+              4
+            ]
+          }
+        },
+        {
+          "key": "applyFn",
+          "celType": "EditableLambdaCel",
+          "metadata": {
+            "key": "applyFn",
+            "segment": "象形",
+            "kind": "js"
+          },
+          "f": "(arr) => arr[0] + arr[1]"
+        },
+        {
+          "key": "result",
+          "celType": "FormulaCel",
+          "metadata": {
+            "key": "result",
+            "segment": "象形",
+            "parser": "f",
+            "inputMap": {
+              "applyFn": "applyFn",
+              "pair": "pair"
+            },
+            "v": 7
+          },
+          "f": "(applyFn pair)"
+        },
+        {
+          "key": "a",
+          "celType": "ValueCel",
+          "metadata": {
+            "key": "a",
+            "segment": "象形",
+            "v": 3
+          }
+        },
+        {
+          "key": "b",
+          "celType": "ValueCel",
+          "metadata": {
+            "key": "b",
+            "segment": "象形",
+            "v": 4
+          }
+        },
+        {
+          "key": "wat-add",
+          "celType": "EditableLambdaCel",
+          "metadata": {
+            "key": "wat-add",
+            "segment": "象形",
+            "kind": "wat",
+            "outputSchema": "wasm:i32",
+            "schema": "lambda-source"
+          },
+          "f": [
+            "(module",
+            "  (func (export \"main\") (param $a i32) (param $b i32) (result i32)",
+            "    local.get $a",
+            "    local.get $b",
+            "    i32.add))"
+          ]
+        },
+        {
+          "key": "wat-result",
+          "celType": "FormulaCel",
+          "metadata": {
+            "key": "wat-result",
+            "segment": "象形",
+            "outputSchema": "wasm:i32",
+            "parser": "f",
+            "inputMap": {
+              "wat-add": "wat-add",
+              "a": "a",
+              "b": "b"
+            },
+            "v": 7
+          },
+          "f": "(wat-add a b)"
+        },
+        {
+          "key": "wat-result-js",
+          "celType": "FormulaCel",
+          "metadata": {
+            "key": "wat-result-js",
+            "segment": "象形",
+            "parser": "f",
+            "inputMap": {
+              "wat-to-js": "wat-to-js",
+              "wat-result": "wat-result"
+            },
+            "v": 7
+          },
+          "f": "(wat-to-js wat-result)"
+        },
+        {
+          "key": "py-greet",
+          "celType": "EditableLambdaCel",
+          "metadata": {
+            "key": "py-greet",
+            "segment": "象形",
+            "kind": "py",
+            "schema": "lambda-source"
+          },
+          "f": [
+            "def greet(left, right):",
+            "    return f\"{left}, {right}!\"",
+            "greet"
+          ]
+        },
+        {
+          "key": "left",
+          "celType": "ValueCel",
+          "metadata": {
+            "key": "left",
+            "segment": "象形",
+            "v": "hello"
+          }
+        },
+        {
+          "key": "right",
+          "celType": "ValueCel",
+          "metadata": {
+            "key": "right",
+            "segment": "象形",
+            "v": "world"
+          }
+        },
+        {
+          "key": "py-greeting",
+          "celType": "FormulaCel",
+          "metadata": {
+            "key": "py-greeting",
+            "segment": "象形",
+            "parser": "f",
+            "inputMap": {
+              "py-greet": "py-greet",
+              "left": "left",
+              "right": "right"
+            },
+            "v": "hello, world!"
+          },
+          "f": "(py-greet left right)"
+        },
+        {
+          "key": "qjs-shout",
+          "celType": "EditableLambdaCel",
+          "metadata": {
+            "key": "qjs-shout",
+            "segment": "象形",
+            "kind": "quickjs"
+          },
+          "f": "((s) => s.toUpperCase() + '!!!')"
+        },
+        {
+          "key": "py-greeting-js",
+          "celType": "FormulaCel",
+          "metadata": {
+            "key": "py-greeting-js",
+            "segment": "象形",
+            "parser": "f",
+            "inputMap": {
+              "py-to-js": "py-to-js",
+              "py-greeting": "py-greeting"
+            },
+            "v": "hello, world!"
+          },
+          "f": "(py-to-js py-greeting)"
+        },
+        {
+          "key": "py-greeting-qjs",
+          "celType": "FormulaCel",
+          "metadata": {
+            "key": "py-greeting-qjs",
+            "segment": "象形",
+            "parser": "f",
+            "inputMap": {
+              "js-to-quickjs": "js-to-quickjs",
+              "py-greeting-js": "py-greeting-js"
+            },
+            "v": "hello, world!"
+          },
+          "f": "(js-to-quickjs py-greeting-js)"
+        },
+        {
+          "key": "qjs-shouted",
+          "celType": "FormulaCel",
+          "metadata": {
+            "key": "qjs-shouted",
+            "segment": "象形",
+            "parser": "f",
+            "inputMap": {
+              "qjs-shout": "qjs-shout",
+              "py-greeting-qjs": "py-greeting-qjs"
+            },
+            "v": "HELLO, WORLD!!!!"
+          },
+          "f": "(qjs-shout py-greeting-qjs)"
+        },
+        {
+          "key": "py-make-pair",
+          "celType": "EditableLambdaCel",
+          "metadata": {
+            "key": "py-make-pair",
+            "segment": "象形",
+            "kind": "py",
+            "outputSchema": "wasm:opaque",
+            "schema": "lambda-source"
+          },
+          "f": [
+            "def go():",
+            "    return {'icons': ['👦', '👧'], 'glue': '👋'}",
+            "go"
+          ]
+        },
+        {
+          "key": "pair-handle",
+          "celType": "FormulaCel",
+          "metadata": {
+            "key": "pair-handle",
+            "segment": "象形",
+            "parser": "f",
+            "inputMap": {
+              "py-make-pair": "py-make-pair"
+            },
+            "v": {
+              "kind": "py",
+              "ref": 1,
+              "type": {
+                "kind": "record",
+                "fields": {}
+              }
+            }
+          },
+          "f": "(py-make-pair)"
+        },
+        {
+          "key": "py-join-pair",
+          "celType": "EditableLambdaCel",
+          "metadata": {
+            "key": "py-join-pair",
+            "segment": "象形",
+            "kind": "py",
+            "schema": "lambda-source"
+          },
+          "f": [
+            "def go(pair):",
+            "    icons = pair['icons']",
+            "    return icons[0] + pair['glue'] + icons[1]",
+            "go"
+          ]
+        },
+        {
+          "key": "joined",
+          "celType": "FormulaCel",
+          "metadata": {
+            "key": "joined",
+            "segment": "象形",
+            "parser": "f",
+            "inputMap": {
+              "py-join-pair": "py-join-pair",
+              "pair-handle": "pair-handle"
+            },
+            "v": "👦👋👧"
+          },
+          "f": "(py-join-pair pair-handle)"
+        }
+      ]
+    }
+  ],
+  "manifests": [
+    {
+      "name": "象形",
+      "version": "0.0.1",
+      "description": "pictograph demo",
+      "dependencies": []
+    }
+  ]
+}

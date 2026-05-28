@@ -75,12 +75,18 @@ export const compileCelBody = async (cel: FireableCel, state: State): Promise<vo
   // Per-compile context: cel-level hints that affect the compiled
   // wrapper. outputSchema lets composite-wasm compilers (py with
   // worker, future kinds) build a wrapper that returns a WasmHandle
-  // instead of eagerly marshalling. Two cels with the same source but
-  // different outputSchemas need separate envelopes, so the cache key
-  // includes a stable serialization of the context.
+  // instead of eagerly marshalling. wasmExport / imports steer the
+  // wasm-bytes compiler (which export to expose, which imports-provider
+  // to instantiate against). Two cels with identical source but
+  // differing context need separate envelopes, so the cache key folds
+  // in a stable serialization of the whole context.
   const outputSchema = resolveOutputWitType(cel, state);
-  const context: CompileContext = outputSchema ? { outputSchema } : {};
-  const ctxKey = outputSchema ? `|${JSON.stringify(outputSchema)}` : "";
+  const md = cel.metadata as { wasmExport?: string; imports?: Key };
+  const context: CompileContext = {};
+  if (outputSchema)            context.outputSchema = outputSchema;
+  if (md.wasmExport !== undefined) context.wasmExport = md.wasmExport;
+  if (md.imports !== undefined)    context.imports    = md.imports;
+  const ctxKey = Object.keys(context).length ? `|${JSON.stringify(context)}` : "";
 
   // Compile cache lookup. Same (kind, source, context) triple → same
   // envelope. The cache stores *Promises*: two cels in the same topo

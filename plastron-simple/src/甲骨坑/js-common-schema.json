@@ -12,7 +12,8 @@
           "isChanged": "string_isChanged",
           "hydrate": "string_hydrate",
           "dehydrate": "string_dehydrate"
-        }
+        },
+        "memoSafe": true
       }
     },
     {
@@ -45,7 +46,8 @@
           "isChanged": "number_isChanged",
           "hydrate": "number_hydrate",
           "dehydrate": "number_dehydrate"
-        }
+        },
+        "memoSafe": true
       }
     },
     {
@@ -78,7 +80,8 @@
           "isChanged": "boolean_isChanged",
           "hydrate": "boolean_hydrate",
           "dehydrate": "boolean_dehydrate"
-        }
+        },
+        "memoSafe": true
       }
     },
     {
@@ -111,7 +114,8 @@
           "isChanged": "bigint_isChanged",
           "hydrate": "bigint_hydrate",
           "dehydrate": "bigint_dehydrate"
-        }
+        },
+        "memoSafe": true
       }
     },
     {
@@ -144,7 +148,8 @@
           "isChanged": "null_isChanged",
           "hydrate": "null_hydrate",
           "dehydrate": "null_dehydrate"
-        }
+        },
+        "memoSafe": true
       }
     },
     {
@@ -243,7 +248,8 @@
           "isChanged": "date_isChanged",
           "hydrate": "date_hydrate",
           "dehydrate": "date_dehydrate"
-        }
+        },
+        "memoSafe": true
       }
     },
     {
@@ -352,7 +358,8 @@
           "isChanged": "regexp_isChanged",
           "hydrate": "regexp_hydrate",
           "dehydrate": "regexp_dehydrate"
-        }
+        },
+        "memoSafe": true
       }
     },
     {

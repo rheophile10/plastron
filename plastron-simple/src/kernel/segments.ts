@@ -1,4 +1,20 @@
 import type { Key, State, 冊 } from "../types/index.js";
+import { dependentOrderFrom, transitiveClosure } from "./topo.js";
+
+/** Compute the boot kernel-set: the transitive closure of all
+ *  segments with `role: "kernel"` plus everything they depend on.
+ *  Members of this set are flush-protected and excluded from
+ *  dehydrate output.
+ *
+ *  See docs/1-design/3-accepted/00-ontology/segment-classification.md
+ *  "Multi-segment kernel". */
+export const computeKernelClosure = (segments: Map<Key, 冊>): Set<Key> => {
+  const roots: Key[] = [];
+  for (const [name, m] of segments) {
+    if (m.role === "kernel") roots.push(name);
+  }
+  return transitiveClosure(roots, (name) => segments.get(name)?.dependencies ?? []);
+};
 
 // ============================================================================
 // Segment introspection helpers — getSegmentManifest, listSegments,
@@ -43,17 +59,5 @@ export const topologicalDependentOrder = (
       bucket.push(k);
     }
   }
-
-  // BFS the transitive dependent set, then return in
-  // dependents-first order via DFS post-order.
-  const visited = new Set<Key>();
-  const order: Key[] = [];
-  const visit = (k: Key): void => {
-    if (visited.has(k)) return;
-    visited.add(k);
-    for (const child of dependentsOf.get(k) ?? []) visit(child);
-    if (k !== segmentKey) order.push(k);
-  };
-  visit(segmentKey);
-  return order;
+  return dependentOrderFrom<Key>(segmentKey, dependentsOf);
 };

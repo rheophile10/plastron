@@ -4,6 +4,7 @@ import type {
 import { isFireable, kindOf } from "../../types/index.js";
 import { resolveSchemas } from "../lifecycle/hydrate/schema.js";
 import { resolveFn } from "../resolve-fn.js";
+import { topoLevels as topoLevelsGeneric } from "../topo.js";
 import { precomputeOptional } from "./precomputeOptional.js";
 import { appendError, makeCelError } from "../../甲骨坑/cel-error.js";
 
@@ -282,42 +283,19 @@ const buildDynamicCascade = (
 
 const topoLevels = (members: Key[], cels: Map<Key, Cel>): Key[][] => {
   const memberSet = new Set(members);
-  const upstreamOf = new Map<Key, Set<Key>>();
-  for (const key of members) {
-    const cel = cels.get(key)!;
-    const ds = new Set<Key>();
-    if (isFireable(cel)) {
+  return topoLevelsGeneric<Key>(
+    members,
+    (key) => {
+      const cel = cels.get(key)!;
+      if (!isFireable(cel)) return [];
       const inputMap = cel.metadata.inputMap;
-      if (inputMap) {
-        for (const ref of Object.values(inputMap)) {
-          for (const k of Array.isArray(ref) ? ref : [ref]) {
-            if (memberSet.has(k)) ds.add(k);
-          }
-        }
+      if (!inputMap) return [];
+      const out: Key[] = [];
+      for (const ref of Object.values(inputMap)) {
+        for (const k of Array.isArray(ref) ? ref : [ref]) out.push(k);
       }
-    }
-    upstreamOf.set(key, ds);
-  }
-
-  const levels: Key[][] = [];
-  const remaining = new Set(members);
-  while (remaining.size > 0) {
-    const ready: Key[] = [];
-    for (const k of remaining) {
-      let satisfied = true;
-      for (const d of upstreamOf.get(k)!) {
-        if (remaining.has(d)) { satisfied = false; break; }
-      }
-      if (satisfied) ready.push(k);
-    }
-    if (ready.length === 0) {
-      const cycle = [...remaining];
-      const err = new Error(`Dependency cycle in cel graph; remaining: ${cycle.join(", ")}`) as Error & { cycle: Key[] };
-      err.cycle = cycle;
-      throw err;
-    }
-    levels.push(ready);
-    for (const k of ready) remaining.delete(k);
-  }
-  return levels;
+      return out;
+    },
+    { memberSet, cycleMessagePrefix: "Dependency cycle in cel graph" },
+  );
 };

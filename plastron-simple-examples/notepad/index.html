@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>notepad — plastron</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        font: 14px/1.45 system-ui, sans-serif;
+        max-width: 50rem; margin: 2rem auto; padding: 0 1rem;
+      }
+      h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+      .sub { color: #888; margin: 0 0 1rem; }
+      .pad { width: 100%; min-height: 24rem; padding: .75rem;
+             font: 14px/1.5 ui-monospace, monospace;
+             border: 1px solid #8884; border-radius: .25rem; resize: vertical;
+             box-sizing: border-box; }
+      .note { color: #888; font-size: .9rem; border-left: 2px solid #8884; padding-left: .75rem; margin: 1rem 0; }
+      code { font: 12px/1.4 ui-monospace, monospace; background: #8881; padding: .1rem .3rem; border-radius: .2rem; }
+    </style>
+  </head>
+  <body>
+    <h1>notepad</h1>
+    <p class="sub">A reactive textarea backed by a plastron <code>ValueCel</code>.
+       Same factory (<code>buildNotepad</code>) the plastron-OS notepad app uses,
+       rendered standalone.</p>
+    <div id="notepad"></div>
+    <p class="note">Wiring: <code>buildNotepad({ mount: "#notepad" })</code> →
+       hydrate → painter. Every keystroke writes <code>notepad.text</code>
+       through plastron-dom's <code>input-binding</code> (declarative — no
+       handler fn needed in this app's source).</p>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

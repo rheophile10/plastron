@@ -2,8 +2,10 @@ import { Archive } from "xit-wasm";
 import { parse as yamlParse } from "yaml";
 import type { Segment } from "../../../plastron/src/index.js";
 import {
+  ARCHIVE_FORMAT_VERSION, ARCHIVE_MIME,
   DEFAULT_SEGMENT_FORMAT,
   MANIFEST_PATH, SEGMENTS_DIR,
+  validateSegmentKey,
   type ArchiveManifest,
   type SegmentFormat,
 } from "./manifest.js";
@@ -30,19 +32,49 @@ export interface ImportResult {
 
 const dec = new TextDecoder();
 
+// Close the archive on any error, then re-throw with `cause` set. Keeps
+// the WASM-backed handle from leaking when bytes are corrupted (parse
+// failures) or when the manifest fails validation post-parse.
+const failClosed = async (
+  archive: Archive,
+  message: string,
+  cause?: unknown,
+): Promise<never> => {
+  await archive.close();
+  throw cause === undefined ? new Error(message) : new Error(message, { cause });
+};
+
 export const importArchive = async (bytes: Uint8Array): Promise<ImportResult> => {
   const archive = await Archive.open(bytes);
 
   const manifestBytes = await archive.read(MANIFEST_PATH);
   if (!manifestBytes) {
-    await archive.close();
-    throw new Error(`Archive is missing ${MANIFEST_PATH}.`);
+    return failClosed(archive, `Archive is missing ${MANIFEST_PATH}.`);
   }
-  const manifest = JSON.parse(dec.decode(manifestBytes)) as ArchiveManifest;
 
+  let manifest: ArchiveManifest;
+  try {
+    manifest = JSON.parse(dec.decode(manifestBytes)) as ArchiveManifest;
+  } catch (e) {
+    return failClosed(archive, `Archive manifest is not valid JSON.`, e);
+  }
+
+  if (manifest.version !== ARCHIVE_FORMAT_VERSION) {
+    return failClosed(
+      archive,
+      `Archive manifest version ${JSON.stringify(manifest.version)} ` +
+      `is not supported (this loader handles version ${ARCHIVE_FORMAT_VERSION}).`,
+    );
+  }
+  if (manifest.format !== ARCHIVE_MIME) {
+    return failClosed(
+      archive,
+      `Archive manifest format ${JSON.stringify(manifest.format)} ` +
+      `does not match ${JSON.stringify(ARCHIVE_MIME)}.`,
+    );
+  }
   if (!Array.isArray(manifest.segments)) {
-    await archive.close();
-    throw new Error(`Archive manifest is missing the "segments" array.`);
+    return failClosed(archive, `Archive manifest is missing the "segments" array.`);
   }
 
   // Legacy archives (format v1 pre-yaml-flag) have no segmentFormat
@@ -54,13 +86,24 @@ export const importArchive = async (bytes: Uint8Array): Promise<ImportResult> =>
 
   const segments: Segment[] = [];
   for (const key of manifest.segments) {
+    try {
+      validateSegmentKey(key);
+    } catch (e) {
+      return failClosed(archive, `Archive manifest contains an unsafe segment key.`, e);
+    }
     const path = `${SEGMENTS_DIR}/${key}.${format}`;
     const segBytes = await archive.read(path);
     if (!segBytes) {
-      await archive.close();
-      throw new Error(`Archive manifest lists segment ${JSON.stringify(key)} but ${path} is missing.`);
+      return failClosed(
+        archive,
+        `Archive manifest lists segment ${JSON.stringify(key)} but ${path} is missing.`,
+      );
     }
-    segments.push(parseSegment(dec.decode(segBytes)));
+    try {
+      segments.push(parseSegment(dec.decode(segBytes)));
+    } catch (e) {
+      return failClosed(archive, `Segment file ${path} is not valid ${format}.`, e);
+    }
   }
 
   return { manifest, segments, archive };

@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test } from "bun:test";
 import assert from "node:assert/strict";
 import {
   createInitialState, precompute, precomputeOptional, resolveFn,
@@ -32,12 +32,10 @@ test("py kind exposes the py-to-js and js-to-py bridge cels", () => {
   }
 });
 
-// ── compile + run: this is slow (Pyodide boots) ─────────────────────────────
+// ── compile + run via Pyodide (boots from local node_modules, ~3s) ─────────
 
-test("a Python lambda compiles via Pyodide and produces correct output", async (t) => {
-  // Skip this test if pyodide can't be loaded (e.g., restricted CI env).
-  // It takes ~5s on a warm boot, ~20s cold.
-  t.diagnostic("loading Pyodide; this can take 5-20s the first time");
+test("a Python lambda compiles via Pyodide and produces correct output", { timeout: 60000 }, async () => {
+  console.log("loading Pyodide; this can take 5-20s the first time");
 
   const state = createInitialState();
   const register = resolveFn(state, "registerLambda");
@@ -53,12 +51,15 @@ test("a Python lambda compiles via Pyodide and produces correct output", async (
 
   const fn = resolveFn(state, "py-double");
   assert.equal(typeof fn, "function");
-  assert.equal(fn(21), 42);
-  assert.equal(fn(-3), -6);
+  // py-compiler's wrapper is always async (PyProxy calls in Bun return
+  // Promises; awaiting is a no-op on Node). The runtime cascade in
+  // fireCel handles Promise returns; tests calling fn directly do too.
+  assert.equal(await fn(21), 42);
+  assert.equal(await fn(-3), -6);
 });
 
-test("Python source without a trailing callable expression throws a clear error", async (t) => {
-  t.diagnostic("loading Pyodide; this can take 5-20s the first time");
+test("Python source without a trailing callable expression throws a clear error", { timeout: 60000 }, async () => {
+  console.log("loading Pyodide; this can take 5-20s the first time");
 
   const state = createInitialState();
   const register = resolveFn(state, "registerLambda");
@@ -75,8 +76,8 @@ test("Python source without a trailing callable expression throws a clear error"
 
 // ── declarative py lambda via hydrate (trap-as-value path) ─────────────────
 
-test("a declarative py cel with bad Python source becomes a CelError; hydrate completes", async (t) => {
-  t.diagnostic("loading Pyodide; this can take 5-20s the first time");
+test("a declarative py cel with bad Python source becomes a CelError; hydrate completes", { timeout: 60000 }, async () => {
+  console.log("loading Pyodide; this can take 5-20s the first time");
 
   const state = createInitialState();
   const hydrate = resolveFn(state, "hydrate");
@@ -109,7 +110,7 @@ test("a declarative py cel with bad Python source becomes a CelError; hydrate co
 
 // ── csp gate ────────────────────────────────────────────────────────────────
 
-test("forcing csp.wasm-available = false makes the py compiler throw before touching Pyodide", async () => {
+test("forcing csp.wasm-available = false makes the py compiler throw before touching Pyodide", { timeout: 60000 }, async () => {
   const state = createInitialState();
   state.cels.set("csp.wasm-available", {
     ...state.cels.get("csp.wasm-available"), v: false,

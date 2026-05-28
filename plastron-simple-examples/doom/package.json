@@ -1,0 +1,13 @@
+{
+  "name": "plastron-simple-doom-example",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Minimal example: load doom.wasm through plastron's kind:\"wasm\" loader, run _initialize, show the captured instance's exports. Walking-skeleton proof made interactive.",
+  "scripts": {
+    "bundle": "bun build index.html --target=browser --outdir dist --external pyodide --external quickjs-emscripten --external wabt --external node:fs/promises --external node:path",
+    "serve": "bun serve.ts",
+    "dev": "bun run bundle && bun run serve",
+    "test": "bun test init.test.ts harness.test.ts harness-real-wad.test.ts"
+  }
+}

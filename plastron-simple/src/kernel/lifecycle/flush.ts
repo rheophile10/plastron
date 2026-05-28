@@ -2,7 +2,7 @@ import type { Fn, Key, State } from "../../types/index.js";
 import { disposeCel } from "./hydrate/cel.js";
 import { flushChannels } from "../io/index.js";
 import { precompute } from "../precompute/index.js";
-import { topologicalDependentOrder } from "../segments.js";
+import { computeKernelClosure, topologicalDependentOrder } from "../segments.js";
 
 // ============================================================================
 // flush(state, segmentKey, options?) — remove every cel whose `segment`
@@ -88,6 +88,19 @@ export const flush: Fn = async (
   segmentKey: Key,
   options: FlushOptions = {},
 ) => {
+  // Kernel-closure protection: any segment reachable from a
+  // role:"kernel" segment via dependencies is part of the boot
+  // kernel-set and cannot be flushed (even with `force: true`).
+  // See docs/1-design/3-accepted/00-ontology/segment-classification.md
+  // "Multi-segment kernel".
+  const kernelSet = computeKernelClosure(state.segments);
+  if (kernelSet.has(segmentKey)) {
+    throw new Error(
+      `flush "${segmentKey}": segment is part of the kernel closure ` +
+      `(role:"kernel" or transitively depended on by one); refused.`,
+    );
+  }
+
   // Dependent-segment policy: refuse when other manifests still
   // depend on this one (their 冊.segments[] includes this segment),
   // unless cascade or force is set.
@@ -119,7 +132,11 @@ export const flush: Fn = async (
 
   const toRemove: Key[] = [];
   for (const cel of state.cels.values()) {
-    if (cel.locked && cel.metadata.segment === "kernel") continue;
+    // Kernel-closure protection already refused at the top guard;
+    // any cel reaching this loop is in a flushable segment. We still
+    // skip locked cels in kernel-closure segments defensively in case
+    // a host has wired a cross-segment cel.
+    if (cel.locked && cel.metadata.segment && kernelSet.has(cel.metadata.segment)) continue;
     const seg = cel.metadata.segment;
     if (seg === undefined) continue;
     if (seg === segmentKey) {

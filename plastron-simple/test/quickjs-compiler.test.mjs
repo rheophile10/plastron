@@ -1,4 +1,4 @@
-import { test } from "node:test";
+import { test } from "bun:test";
 import assert from "node:assert/strict";
 import {
   createInitialState, precompute, precomputeOptional, resolveFn,
@@ -28,8 +28,11 @@ test("quickjs kind exposes the four status cels and two bridge cels", () => {
 
 // ── compile + run via registerLambda ────────────────────────────────────────
 
-test("a quickjs lambda compiles and runs", async (t) => {
-  t.diagnostic("loading QuickJS runtime; ~50-200ms first time");
+// The dead `(t)` param made bun wait on a never-called done-callback —
+// a perma-timeout that looked like slow QuickJS. Dropping it lets the test
+// run in the documented ~50-200ms. QuickJS coverage stays live (not skipped).
+test("a quickjs lambda compiles and runs", { timeout: 60000 }, async () => {
+  console.log("loading QuickJS runtime; ~50-200ms first time");
 
   const state = createInitialState();
   const register = resolveFn(state, "registerLambda");
@@ -46,7 +49,7 @@ test("a quickjs lambda compiles and runs", async (t) => {
   assert.equal(fn(-3), -6);
 });
 
-test("quickjs lambda receives string args and returns string results", async () => {
+test("quickjs lambda receives string args and returns string results", { timeout: 60000 }, async () => {
   const state = createInitialState();
   const register = resolveFn(state, "registerLambda");
   await register(state, {
@@ -58,7 +61,7 @@ test("quickjs lambda receives string args and returns string results", async () 
   assert.equal(fn("world"), "hello, world!");
 });
 
-test("quickjs lambda handles multiple args", async () => {
+test("quickjs lambda handles multiple args", { timeout: 60000 }, async () => {
   const state = createInitialState();
   const register = resolveFn(state, "registerLambda");
   await register(state, {
@@ -72,7 +75,7 @@ test("quickjs lambda handles multiple args", async () => {
 
 // ── source where last expression isn't callable ─────────────────────────────
 
-test("quickjs source without a trailing callable throws a clear error", async () => {
+test("quickjs source without a trailing callable throws a clear error", { timeout: 60000 }, async () => {
   const state = createInitialState();
   const register = resolveFn(state, "registerLambda");
   await assert.rejects(
@@ -87,8 +90,8 @@ test("quickjs source without a trailing callable throws a clear error", async ()
 
 // ── host imports ────────────────────────────────────────────────────────────
 
-test("a quickjs lambda can call host.log and host.now", async (t) => {
-  t.diagnostic("loading QuickJS runtime");
+test("a quickjs lambda can call host.log and host.now", { timeout: 60000 }, async () => {
+  console.log("loading QuickJS runtime");
 
   const state = createInitialState();
   const calls = [];
@@ -114,7 +117,7 @@ test("a quickjs lambda can call host.log and host.now", async (t) => {
 
 // ── declarative path + trap-as-value ───────────────────────────────────────
 
-test("a declarative quickjs cel with bad source becomes a CelError; hydrate completes", async () => {
+test("a declarative quickjs cel with bad source becomes a CelError; hydrate completes", { timeout: 60000 }, async () => {
   const state = createInitialState();
   const hydrate = resolveFn(state, "hydrate");
   const { isCelError } = await import("../dist/index.js");
@@ -136,7 +139,7 @@ test("a declarative quickjs cel with bad source becomes a CelError; hydrate comp
 
 // ── csp gate ────────────────────────────────────────────────────────────────
 
-test("csp.wasm-available = false rejects quickjs compile before runtime load", async () => {
+test("csp.wasm-available = false rejects quickjs compile before runtime load", { timeout: 60000 }, async () => {
   const state = createInitialState();
   state.cels.set("csp.wasm-available", {
     ...state.cels.get("csp.wasm-available"), v: false,
@@ -150,7 +153,7 @@ test("csp.wasm-available = false rejects quickjs compile before runtime load", a
 
 // ── integration: quickjs cel in a formula graph ────────────────────────────
 
-test("a quickjs lambda integrates with the runCycle cascade", async () => {
+test("a quickjs lambda integrates with the runCycle cascade", { timeout: 60000 }, async () => {
   const state = createInitialState();
   const hydrate  = resolveFn(state, "hydrate");
   const runCycle = resolveFn(state, "runCycle");

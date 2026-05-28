@@ -1,0 +1,23 @@
+{
+  "name": "cli-segment-export",
+  "cels": [
+    {
+      "key": "exportToDir",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "exportToDir", "segment": "cli-segment-export", "name": "exportToDir", "kind": "native",
+        "description": "CLI-only. Async. (state, targetDir, opts?) -> { exportedSegments, targetDir }. Copies the plastron/ store (mirroring its layout) to targetDir/plastron/. opts.onlySegments?: Key[] (default: everything except the kernel closure); opts.includeTransitiveDeps?: boolean (default true when onlySegments is set); opts.includeKernel?: boolean (default false); opts.overwrite?: boolean (default false — refuses if targetDir/plastron exists). Rebuilds targetDir/plastron/index.json from the copied set. Pure file op; does not touch state.cels. Installed only when file-store.backend === 'node-fs'."
+      },
+      "locked": true
+    },
+    {
+      "key": "importFromDir",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "importFromDir", "segment": "cli-segment-export", "name": "importFromDir", "kind": "native",
+        "description": "CLI-only. Async. (state, sourceDir, opts?) -> { importedSegments }. Reads sourceDir/plastron/segments/<name>/<version>/{manifest,segment}.json and writes each into the local segment-store. Refuses role:kernel pairs (kernel comes from the local bundle). Throws on name@version collision unless opts.overwrite is true. Installed only when file-store.backend === 'node-fs'."
+      },
+      "locked": true
+    }
+  ]
+}

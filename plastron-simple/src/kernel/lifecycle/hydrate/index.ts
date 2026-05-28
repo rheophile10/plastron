@@ -1,6 +1,7 @@
 import type { Hydrate } from "../../../types/index.js";
 import { precompute } from "../../precompute/index.js";
 import { validateInputKinds } from "./input-kinds.js";
+import { installMemoAndTrampolines } from "./memo-install.js";
 import { resolveSchemas } from "./schema.js";
 import { installCels, validateManifests } from "./segment.js";
 import { applySchemaHydrate } from "./value.js";
@@ -57,6 +58,7 @@ export const hydrate: Hydrate = async (state, segments, manifests) => {
   validateInputKinds(state);
   resolveSchemas(state);
   applySchemaHydrate(state);
+  installMemoAndTrampolines(state);
   precompute(state);
   for (const m of manifests) state.segments.set(m.name, m);
   return state;

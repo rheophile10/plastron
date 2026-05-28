@@ -5,12 +5,14 @@
   "version": "0.0.1",
   "description": "Pictograph example ported to plastron-simple: read a dehydrated 甲骨, hydrate it, runCycle, demonstrate a runtime function-cel swap, dehydrate to 甲骨.json.",
   "scripts": {
-    "start": "tsx main.ts",
-    "check": "tsc --noEmit"
+    "start": "bun main.ts",
+    "bundle": "bun bundle.ts",
+    "test": "bun test bundle.test.ts",
+    "harness": "bun test harness.test.ts",
+    "check": "bun build index.html --target=browser --outdir /tmp/picto-check --external pyodide --external quickjs-emscripten --external wabt --external node:fs/promises --external node:path"
   },
   "devDependencies": {
     "@types/node": "^25.9.1",
-    "tsx": "^4.19.2",
-    "typescript": "~5.9.3"
+    "playwright-core": "^1.60.0"
   }
 }

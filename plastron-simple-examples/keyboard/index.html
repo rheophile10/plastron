@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>keyboard — plastron sound segment</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        font: 14px/1.45 system-ui, sans-serif;
+        max-width: 50rem; margin: 2rem auto; padding: 0 1rem;
+      }
+      h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+      .sub { color: #888; margin: 0 0 1.5rem; }
+      .controls { display: flex; gap: 1rem; align-items: center; margin: 1rem 0; flex-wrap: wrap; }
+      .controls label { display: flex; flex-direction: column; font-size: .75rem; color: #888; gap: .15rem; }
+      .controls input[type=range] { width: 8rem; }
+      .controls select { font: inherit; padding: .2rem .35rem; }
+      code { font: 12px/1.4 ui-monospace, monospace; background: #8881; padding: .1rem .3rem; border-radius: .2rem; }
+
+      /* The piano. White keys flex side-by-side; black keys overlay on top. */
+      #piano {
+        position: relative;
+        height: 200px;
+        margin: 1.5rem 0 1rem;
+        user-select: none;
+      }
+      #white-keys {
+        display: flex;
+        height: 100%;
+      }
+      .white {
+        flex: 1;
+        border: 1px solid #444;
+        border-radius: 0 0 .35rem .35rem;
+        background: linear-gradient(to bottom, #fdfdfd 80%, #eee);
+        position: relative;
+        cursor: pointer;
+        transition: background .05s;
+      }
+      .white.pressed { background: linear-gradient(to bottom, #c9e2ff 80%, #9bc8f7); }
+      .white .label {
+        position: absolute; bottom: .35rem; left: 0; right: 0;
+        text-align: center; font: 11px/1 ui-monospace, monospace; color: #888;
+      }
+      .black {
+        position: absolute;
+        width: 6%;
+        height: 65%;
+        top: 0;
+        border-radius: 0 0 .25rem .25rem;
+        background: linear-gradient(to bottom, #444 70%, #222);
+        cursor: pointer;
+        z-index: 2;
+        transition: background .05s;
+      }
+      .black.pressed { background: linear-gradient(to bottom, #4a6f9a 70%, #2c4a6e); }
+      .black .label {
+        position: absolute; bottom: .25rem; left: 0; right: 0;
+        text-align: center; font: 10px/1 ui-monospace, monospace; color: #ccc;
+      }
+
+      .status { font: 12px/1.4 ui-monospace, monospace; color: #888; min-height: 1.4em; }
+      .note { color: #888; font-size: .9rem; border-left: 2px solid #8884; padding-left: .75rem; margin: 1rem 0; }
+    </style>
+  </head>
+  <body>
+    <h1>keyboard</h1>
+    <p class="sub">A musical keyboard driven by plastron's <code>sound</code> segment.
+       Press keys on your keyboard (or click) — each key triggers
+       <code>sound.play-tone</code>. Same cel doom uses for SFX dispatch.</p>
+
+    <div class="controls">
+      <label>waveform
+        <select id="wave">
+          <option>sine</option>
+          <option>triangle</option>
+          <option>square</option>
+          <option>sawtooth</option>
+        </select>
+      </label>
+      <label>volume <span id="vol-val">100%</span>
+        <input id="vol" type="range" min="0" max="100" value="100" />
+      </label>
+      <label>octave <span id="oct-val">4</span>
+        <input id="oct" type="range" min="2" max="6" value="4" />
+      </label>
+    </div>
+
+    <div id="piano">
+      <div id="white-keys"></div>
+      <!-- black keys are absolutely-positioned children appended by main.ts -->
+    </div>
+
+    <div class="status" id="status">click anywhere on the page to enable sound (browser autoplay policy)</div>
+
+    <p class="note">Wiring: this page hits <code>resolveFn(state, "sound.play-tone")</code>
+       and calls it with <code>{freq, duration, type, gain}</code>. The
+       same <code>sound</code> segment ships in the kernel; the doom
+       example uses its <code>sound.play-pcm</code> sibling for SFX.</p>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

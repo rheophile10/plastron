@@ -1,0 +1,34 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>web-editor — plastron</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        font: 14px/1.45 system-ui, sans-serif;
+        max-width: 64rem; margin: 1.5rem auto; padding: 0 1rem;
+      }
+      h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+      .sub { color: #888; margin: 0 0 1rem; }
+      .note { color: #888; font-size: .9rem; border-left: 2px solid #8884; padding-left: .75rem; margin: 1rem 0; }
+      code { font: 12px/1.4 ui-monospace, monospace; background: #8881; padding: .1rem .3rem; border-radius: .2rem; }
+      textarea { font: 13px/1.45 ui-monospace, monospace; }
+    </style>
+  </head>
+  <body>
+    <h1>web-editor</h1>
+    <p class="sub">A live-editable plastron app — edit the spec on the left,
+       the right side hydrates it as a child segment and shows the result.
+       Same factory (<code>buildWebEditor</code>) the plastron-OS web-editor
+       app uses, rendered standalone.</p>
+    <div id="webedit"></div>
+    <p class="note">Wiring: <code>buildWebEditor({ mount: "#webedit" })</code>
+       hydrates with the <code>COUNTER_EXAMPLE</code> spec; the inner editor
+       parses your JSON spec into cels each tick (so syntax errors degrade
+       gracefully). Try the <code>WEATHER_EXAMPLE</code> by editing
+       <code>main.ts</code> and swapping it in.</p>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

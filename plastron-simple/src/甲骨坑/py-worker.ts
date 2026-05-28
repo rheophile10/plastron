@@ -1,7 +1,7 @@
-// py-worker — runs INSIDE a Node worker_threads worker (or a browser
-// Worker). Owns one Pyodide instance, plus a small registry of Python
-// callables AND a value table for composite handles. Main-thread
-// py-compiler talks to this via postMessage envelopes.
+// py-worker — runs INSIDE a WHATWG Worker (Bun, browser, Deno). Owns
+// one Pyodide instance plus a small registry of Python callables and a
+// value table for composite handles. Main-thread py-compiler talks to
+// this via postMessage envelopes.
 //
 // Protocol (kind discriminator on the envelope):
 //
@@ -26,7 +26,10 @@
 //     { kind: "ready" } | { kind: "ok", id, ... } | { kind: "error", ... }
 //
 // Host capabilities (host.log, host.now, host.random) are bound in-
-// process inside the worker. v1 doesn't proxy back to the main thread.
+// process inside the worker. v1 doesn't proxy back to the main thread:
+// host swapping isn't observable through the worker boundary (a known
+// limitation noted in WASM-DOMAIN.md § 4 / 7). Tests that want host
+// mocking use main-thread py (py.worker-mode = false).
 
 interface PyProxyLike {
   toJs: (options?: { depth?: number }) => unknown;
@@ -41,26 +44,22 @@ const isPyProxyLike = (v: unknown): v is PyProxyLike =>
   v !== null && typeof v === "object" &&
   typeof (v as { toJs?: unknown }).toJs === "function";
 
-interface PortLike {
-  postMessage: (msg: unknown) => void;
-  on: (event: "message", handler: (msg: unknown) => void) => void;
-}
-
-const getParentPort = async (): Promise<PortLike> => {
-  const wt = await import("node:worker_threads");
-  if (!wt.parentPort) {
-    throw new Error("py-worker: parentPort missing — must run in a Worker");
-  }
-  return wt.parentPort as PortLike;
-};
-
 interface HandleArg { __handle: true; ref: number }
 const isHandleArg = (v: unknown): v is HandleArg =>
   v !== null && typeof v === "object" &&
   (v as { __handle?: unknown }).__handle === true;
 
+// Structural view of the WorkerGlobalScope `self`. Bun, browser, and
+// Deno all expose `self` inside a Worker with addEventListener +
+// postMessage; structural typing keeps the kernel's tsconfig free of
+// DOM lib types.
+interface WorkerSelf {
+  addEventListener: (event: "message", h: (e: { data: unknown }) => void) => void;
+  postMessage: (msg: unknown) => void;
+}
+const port = (globalThis as unknown as { self: WorkerSelf }).self;
+
 const main = async (): Promise<void> => {
-  const port = await getParentPort();
   const pyodideMod = await import("pyodide");
   const pyodide = await (pyodideMod as unknown as {
     loadPyodide: () => Promise<PyodideAPI>;
@@ -75,25 +74,19 @@ const main = async (): Promise<void> => {
     random: () => Math.random(),
   });
 
-  // Function registry — keyed by fnRef. compose with the value-table
-  // below: a Python fn lives here, its results (when composite) live in
-  // the value table.
   const fns = new Map<number, {
     fn: (...args: unknown[]) => unknown;
     composite: boolean;
   }>();
   let nextFnRef = 1;
 
-  // Composite value table. Each entry is a PyProxy (or any Python
-  // object Pyodide returns) we're holding so bridges and downstream
-  // py cels can use it without re-marshalling.
   const handles = new Map<number, unknown>();
   let nextHandleRef = 1;
 
   port.postMessage({ kind: "ready" });
 
-  port.on("message", (raw: unknown) => {
-    const msg = raw as {
+  port.addEventListener("message", (e) => {
+    const msg = e.data as {
       kind: string;
       id?: number;
       source?: string;
@@ -123,28 +116,35 @@ const main = async (): Promise<void> => {
         case "call": {
           const entry = fns.get(msg.fnRef!);
           if (!entry) throw new Error(`py-worker: fnRef ${msg.fnRef} not found`);
-          // Dereference any handle args back to their stored PyProxies.
           const args = (msg.args ?? []).map((a) =>
             isHandleArg(a) ? handles.get(a.ref) : a);
-          const result = entry.fn(...args);
-          if (entry.composite) {
-            // Keep the result in the value table; return a handle. The
-            // result might be a PyProxy or a native value — either way
-            // we store as-is. The bridge will materialize on demand.
-            const ref = nextHandleRef++;
-            handles.set(ref, result);
-            port.postMessage({ kind: "ok", id: msg.id, handle: { ref } });
-          } else {
-            // Eager marshal: convert PyProxy to JS, return the value.
-            let value: unknown;
-            if (isPyProxyLike(result)) {
-              value = result.toJs({ depth: -1 });
-              result.destroy?.();
-            } else {
-              value = result;
-            }
-            port.postMessage({ kind: "ok", id: msg.id, value });
-          }
+          // Pyodide-in-Bun-Worker may return Promises from PyProxy
+          // calls; await defensively. Promise.resolve unwraps either.
+          // Errors in async path go through the outer try/catch by
+          // chaining .catch to the same handler.
+          Promise.resolve(entry.fn(...args))
+            .then((result) => {
+              if (entry.composite) {
+                const ref = nextHandleRef++;
+                handles.set(ref, result);
+                port.postMessage({ kind: "ok", id: msg.id, handle: { ref } });
+              } else {
+                let value: unknown;
+                if (isPyProxyLike(result)) {
+                  value = result.toJs({ depth: -1 });
+                  result.destroy?.();
+                } else {
+                  value = result;
+                }
+                port.postMessage({ kind: "ok", id: msg.id, value });
+              }
+            })
+            .catch((e: unknown) => {
+              const err = e instanceof Error
+                ? { message: e.message, stack: e.stack }
+                : { message: String(e) };
+              port.postMessage({ kind: "error", id: msg.id, ...err });
+            });
           return;
         }
         case "to-js": {
@@ -159,9 +159,6 @@ const main = async (): Promise<void> => {
           } else {
             value = stored;
           }
-          // to-js is one-shot: free the handle after materialization.
-          // Bridges that want to materialize twice should call the
-          // underlying py fn twice.
           handles.delete(msg.ref!);
           port.postMessage({ kind: "ok", id: msg.id, value });
           return;

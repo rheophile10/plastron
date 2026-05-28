@@ -1,0 +1,63 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>doom — plastron harness demo</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body {
+        font: 14px/1.45 system-ui, sans-serif;
+        max-width: 50rem; margin: 2rem auto; padding: 0 1rem;
+      }
+      h1 { font-size: 1.4rem; margin: 0 0 .25rem; }
+      .sub { color: #888; margin: 0 0 1rem; }
+      .row { display: flex; gap: .75rem; align-items: center; margin-bottom: 1rem; flex-wrap: wrap; }
+      button {
+        font: inherit; padding: .4rem .9rem; cursor: pointer;
+        background: #007aff; color: white; border: 0; border-radius: .25rem;
+      }
+      button:disabled { background: #888; cursor: not-allowed; }
+      button:hover:not(:disabled) { background: #0066cc; }
+      input[type="file"] { font: inherit; }
+      code { font: 12px/1.4 ui-monospace, monospace; background: #8881; padding: .1rem .3rem; border-radius: .2rem; }
+      pre { font: 11px/1.4 ui-monospace, monospace; background: #8881; padding: .6rem; border-radius: .25rem; overflow: auto; max-height: 14rem; margin: 0; }
+      canvas {
+        display: block; image-rendering: pixelated;
+        width: 640px; height: 400px;
+        background: #000;
+        border: 1px solid #8884;
+        outline: none;
+      }
+      .note { color: #888; font-size: .9rem; border-left: 2px solid #8884; padding-left: .75rem; margin: 1rem 0; }
+      .err { color: #c33; }
+      .status { font: 12px/1.4 ui-monospace, monospace; color: #888; min-height: 1.4em; }
+    </style>
+  </head>
+  <body>
+    <h1>doom — plastron harness</h1>
+    <p class="sub">Load <code>doom.wasm</code> through <code>kind:"wasm"</code> + a real
+       <a href="#harness">harness</a> (WASI fd layer for the WAD, canvas blit, RAF loop, keys).</p>
+
+    <div class="row">
+      <label>Replace WAD: <input type="file" id="wad" accept=".wad" /></label>
+    </div>
+
+    <canvas id="screen" tabindex="0"></canvas>
+
+    <div class="status" id="status">booting…</div>
+    <div id="banner" style="display:none; margin-top:.75rem; padding:.6rem .8rem; border-radius:.25rem; background:#c33; color:#fff; font-size:13px;"></div>
+
+    <h2 style="font-size: .9rem; color: #888; margin: 1.5rem 0 .4rem;">log</h2>
+    <pre id="log"></pre>
+
+    <p class="note">First attempt at <code>doom-harness</code>. The WASI shim is a
+       minimum viable subset; expect bumps (wrong errno on edge cases, framebuffer
+       color order, save-game writes that return ENOSYS). Frames are blitted into
+       the canvas via <code>env.draw_frame</code>; keys are read from a queue via
+       <code>env.get_key</code>; the WAD is served through a fd-backed virtual fs
+       (preopen "/").</p>
+
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

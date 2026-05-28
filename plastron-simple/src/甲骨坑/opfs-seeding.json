@@ -1,0 +1,14 @@
+{
+  "name": "opfs-seeding",
+  "cels": [
+    {
+      "key": "seedStore",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "seedStore", "segment": "opfs-seeding", "name": "seedStore", "kind": "native",
+        "description": "Async. (state) -> { seeded, skipped }. Populate the segment-store under plastron/ from the in-memory boot segments (the kernel closure). Idempotent: a name@version already in the index is skipped. Host-called after createInitialState; NOT auto-fired at boot (would make every transient State touch disk). Writes via segment-store.putRaw, so it can seed role:kernel segments. node-fs in CLI, OPFS in browser, via file-store."
+      },
+      "locked": true
+    }
+  ]
+}

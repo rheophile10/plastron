@@ -17,5 +17,7 @@
     "noUncheckedSideEffectImports": true,
     "types": ["node"]
   },
-  "include": ["."]
+  "include": ["."],
+  "//": "Editor/IntelliSense config only — no script runs tsc. The package `check` is `bun build` (compiles + resolves the whole entry chain via bun; bun strips types, it does not type-check). Deep type safety lives in the kernel package's own tsc. browser-main.ts (DOM globals + imports the kernel, which intentionally typechecks itself without the DOM lib) and bundle.ts / bundle.test.ts / harness.test.ts (Bun.* globals, playwright-core, bun:test) are browser/Bun-runtime entries excluded from this project — they run via `bun`/the bundler, like the kernel's .mjs tests.",
+  "exclude": ["dist", "browser-main.ts", "bundle.ts", "bundle.test.ts", "harness.test.ts"]
 }

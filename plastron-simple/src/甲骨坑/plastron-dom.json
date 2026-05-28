@@ -1,0 +1,60 @@
+{
+  "name": "plastron-dom",
+  "cels": [
+    {
+      "key": "plastron-dom.paint",
+      "celType": "ChannelCel",
+      "metadata": {
+        "key": "plastron-dom.paint", "segment": "plastron-dom", "drain": "plastron-dom.paint.drain",
+        "description": "RAF-batched paint channel. View FormulaCels declare metadata.channel: [\"plastron-dom.paint\"]; the cascade buffers their render-specs here, and draining forwards them to the per-state painter which coalesces into one rAF flush."
+      },
+      "v": { "drain": "plastron-dom.paint.drain" }
+    },
+    {
+      "key": "plastron-dom.paint.drain",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "plastron-dom.paint.drain", "segment": "plastron-dom", "kind": "native",
+        "description": "Channel drain: forwards each buffered view cel's render-spec to the painter's batched enqueue."
+      },
+      "locked": true
+    },
+    {
+      "key": "plastron-dom.diffVNodes",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "plastron-dom.diffVNodes", "segment": "plastron-dom", "kind": "native",
+        "description": "Pure vnode diff: (prev, next) → JSON Patch. Positional children by default; keyed reconciliation when both lists are fully keyed."
+      },
+      "locked": true
+    },
+    {
+      "key": "plastron-dom.applyPatch",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "plastron-dom.applyPatch", "segment": "plastron-dom", "kind": "native",
+        "description": "DOM-mutating patch applier (browser only): (target, mounted, patch, reg, state, doc) → new mounted node. Maintains the per-element listener registry."
+      },
+      "locked": true
+    },
+    {
+      "key": "plastron-dom.applyListenerDelta",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "plastron-dom.applyListenerDelta", "segment": "plastron-dom", "kind": "native",
+        "description": "Global-listener reconciliation: diff prev vs next listener-spec arrays and add/remove on the named global targets."
+      },
+      "locked": true
+    },
+    {
+      "key": "patch",
+      "celType": "SchemaCel",
+      "metadata": { "key": "patch", "segment": "plastron-dom" },
+      "v": {
+        "key": "patch",
+        "zod": {},
+        "protocols": {}
+      }
+    }
+  ]
+}

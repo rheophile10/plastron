@@ -3,70 +3,207 @@
     "name": "kernel",
     "version": "1.0.0",
     "description": "Kernel-internal seeds. Always present.",
+    "role": "kernel",
     "dependencies": [
       "csp",
       "cel-error",
       "host",
       "wasm-types",
+      "lambda-source",
       "js-compiler",
       "builtins",
       "wat-compiler",
+      "wasm-bytes",
       "py-compiler",
-      "quickjs-compiler"
+      "quickjs-compiler",
+      "file-store",
+      "html-template-parser",
+      "plastron-dom",
+      "segment-store",
+      "opfs-seeding",
+      "cli-segment-export",
+      "sheet",
+      "user-space-ops",
+      "segment-archive",
+      "app-host",
+      "sound"
     ]
+  },
+  {
+    "name": "lambda-source",
+    "version": "1.0.0",
+    "description": "Opt-in schema for round-tripping multi-line lambda/formula source bodies as string[] in dehydrated JSON. Inflate-side join is always-on; this schema's sourceDehydrate splits back for readable .json output.",
+    "dependencies": [],
+    "role": "library"
   },
   {
     "name": "cel-error",
     "version": "1.0.0",
     "description": "Trap-as-value schema. SchemaCel + protocol fns for the { kind: 'error', at, trap, message, stack? } shape that runCycle and compileCelBody store on cels whose evaluator throws.",
-    "dependencies": []
+    "dependencies": [],
+    "role": "library"
   },
   {
     "name": "host",
     "version": "1.0.0",
     "description": "Host-capability cells: console.log/warn/error, now, random. Read by each kind segment's compiler layer (wat as wasm imports; py via pyodide globals binding). Apps replace _fn entries to gate or sandbox capabilities at install time.",
-    "dependencies": []
+    "dependencies": [],
+    "role": "library"
   },
   {
     "name": "wasm-types",
     "version": "1.0.0",
     "description": "SchemaCels for the WIT primitive types (wasm:bool, wasm:i32, wasm:u32, wasm:i64, wasm:u64, wasm:f32, wasm:f64, wasm:char, wasm:string). Discriminator kind:'wasm' marks cels as living in a wasm domain — bridge cels and per-kind precompute layers dispatch on it.",
-    "dependencies": []
+    "dependencies": [],
+    "role": "library"
   },
   {
     "name": "csp",
     "version": "1.0.0",
     "description": "Runtime CSP capability probes (eval, wasm) surfaced as locked cels.",
-    "dependencies": []
+    "dependencies": [],
+    "role": "library"
   },
   {
     "name": "js-compiler",
     "version": "1.0.0",
     "description": "The 'js' compiler cel — `new Function`-backed JS source → Fn. Gated on csp.eval-available.",
-    "dependencies": ["csp"]
+    "dependencies": [
+      "csp"
+    ],
+    "role": "library"
   },
   {
     "name": "builtins",
     "version": "1.0.0",
     "description": "Arithmetic operators (+ - * /) as LockedLambdaCels. Flushable; formulas referencing them error cleanly when removed.",
-    "dependencies": []
+    "dependencies": [],
+    "role": "library"
   },
   {
     "name": "wat-compiler",
     "version": "1.0.0",
     "description": "The 'wat' compiler cel — WebAssembly text-format source → callable Fn via wabt.js + WebAssembly.instantiate. Gated on csp.wasm-available. wabt.js is dynamic-imported only on first compile.",
-    "dependencies": ["csp"]
+    "dependencies": [
+      "csp"
+    ],
+    "role": "library"
+  },
+  {
+    "name": "wasm-bytes",
+    "version": "1.0.0",
+    "description": "The 'wasm' loader cel — precompiled .wasm bytes (base64 inline, or a 'file-store:<path>' reference) + a WIT descriptor → callable Fn via WebAssembly.instantiate. The sibling to wat/py/quickjs that takes bytes instead of source; unlocks importing any language precompiled to wasm (Rust/C/Zig/…). Export chosen by metadata.wasmExport; imports default to { host } with a metadata.imports provider cel for WASI/env shims; composite outputSchema → WasmHandle. Gated on csp.wasm-available. Plus wasm-to-js / js-to-wasm bridges. See plastron-simple/docs/4-current/07-wasm/11-wasm-bytes-kind.md.",
+    "dependencies": [
+      "csp",
+      "host",
+      "wasm-types",
+      "file-store"
+    ],
+    "role": "library"
   },
   {
     "name": "py-compiler",
     "version": "1.0.0",
     "description": "The 'py' compiler cel — Python source → callable Fn via Pyodide. Plus py-to-js and js-to-py bridge cels using Pyodide's built-in conversion. Pyodide is dynamic-imported only on first compile; main-thread in v1.",
-    "dependencies": ["csp"]
+    "dependencies": [
+      "csp"
+    ],
+    "role": "library"
   },
   {
     "name": "quickjs-compiler",
     "version": "1.0.0",
     "description": "The 'quickjs' compiler cel — JS source → callable Fn via QuickJS-emscripten (JS-in-wasm sandbox). Plus quickjs-to-js and js-to-quickjs bridge cels. Substitutes for Javy with the same QuickJS interpreter, npm-native distribution. Lazy-loaded on first compile; main-thread in v1.",
-    "dependencies": ["csp"]
+    "dependencies": [
+      "csp"
+    ],
+    "role": "library"
+  },
+  {
+    "name": "file-store",
+    "version": "1.0.0",
+    "description": "Phase A. Pathlib-shaped fs.* fns (read/write/list/stat/rename/mkdir/rmdir/delete/exists) over OPFS in browser and node:fs/promises in CLI. One backend chosen sync at module load; module-singleton dispatch (descriptor cels file-store.backend / .root are read-only in Phase A). Ships the file-binary SchemaCel with size / isChanged / mime protocols. No content addressing, no history, no schemas beyond file-binary yet — see plastron-simple/docs/4-current/09-storage/01-file-store.md for the shipped surface, plastron-simple/docs/1-design/3-accepted/09-storage/opfs-file-store.md for the accepted Phase A design, and plastron-simple/docs/1-design/1-under-consideration/09-storage/xit-versioned-files.md for the phased xit vision.",
+    "dependencies": [],
+    "role": "library"
+  },
+  {
+    "name": "html-template-parser",
+    "version": "1.0.0",
+    "description": "View layer. The html-template (inline) and html-template-ref (live-editable) FormulaCel parsers turn HTML-shaped templates with {{…}} interpolation into a render-spec ({vnode, mount, listeners}). Ships the memoSafe vnode / render-spec / string-list schemas the output flows through. Interpolation bodies are the kernel's S-expression formula language.",
+    "dependencies": [],
+    "role": "library"
+  },
+  {
+    "name": "plastron-dom",
+    "version": "1.0.0",
+    "description": "Painter. The RAF-batched plastron-dom.paint ChannelCel (per-state painter coalesces N render-spec enqueues into one frame), the pure plastron-dom.diffVNodes (vnode → JSON Patch, keyed reconciliation), plastron-dom.applyPatch (DOM mutation, browser-gated, document-injectable), plastron-dom.applyListenerDelta (global-listener reconciliation), and the patch schema. Off-browser the patch is produced and observable but DOM mutation is skipped. Consumes the vnode/render-spec schemas from html-template-parser and the registry mechanisms from dom/events.ts.",
+    "dependencies": ["html-template-parser"],
+    "role": "library"
+  },
+  {
+    "name": "segment-store",
+    "version": "1.0.0",
+    "description": "Chunk B of segment-lifecycle. Persistent storage for dehydrated segments under plastron/segments/<name>/<version>/{manifest,segment}.json with a plastron/index.json lookup table. Five async store.* ops (put/get/list/delete/has) composed over file-store's fs.* — no new I/O primitives. Uncompressed JSON v1; index-last + tmp-rename atomicity; version strings are opaque filename components. See plastron-simple/docs/4-current/09-storage/02-segment-store.md for the shipped surface and plastron-simple/docs/1-design/2-in-evaluation/segment-opfs-layout.md for the design.",
+    "dependencies": [
+      "file-store"
+    ],
+    "role": "library"
+  },
+  {
+    "name": "opfs-seeding",
+    "version": "1.0.0",
+    "description": "Chunk C of segment-lifecycle. seedStore(state) populates the segment-store under plastron/ from the in-memory boot segments (the kernel closure), idempotently — a name@version already in the index is skipped. Host-called after createInitialState (NOT auto-fired at boot, to keep transient/test States off disk); writes via segment-store.putRaw so it can seed role:kernel segments. See plastron-simple/docs/4-current/01-boot/ for the shipped surface and plastron-simple/docs/1-design/2-in-evaluation/opfs-seeding.md for the design (incl. the deferred auto-fire + boot-from-OPFS pieces).",
+    "dependencies": [
+      "segment-store"
+    ],
+    "role": "library"
+  },
+  {
+    "name": "cli-segment-export",
+    "version": "1.0.0",
+    "description": "Chunk F of segment-lifecycle. CLI-only: exportToDir(state, dir, opts) copies the plastron/ store (a segment + its transitive deps, kernel-closure excluded by default) to a chosen disk directory mirroring the store layout; importFromDir(state, dir, opts) brings it back via segment-store.put. Cels install only when file-store.backend === 'node-fs' (empty in browser builds). v1: dir format only (tar.gz/zip deferred). See plastron-simple/docs/4-current/09-storage/03-cli-segment-export.md for the shipped surface and plastron-simple/docs/1-design/2-in-evaluation/cli-segment-export.md for the design.",
+    "dependencies": [
+      "segment-store"
+    ],
+    "role": "library"
+  },
+  {
+    "name": "sheet",
+    "version": "1.0.0",
+    "description": "Spreadsheet machinery. The `infix` FormulaCel parser (Excel-style =A1*2; A1 refs resolve to sibling sheet.<addr> cell keys and auto-wire into inputMap; SUM/MIN/MAX/AVG/IF, ranges, comparisons, & concat) plus the action cels sheet.commit-cell / .cancel-edit / .move-selection / .start-edit. The per-sheet data layer (N×M grid + selection/editing/formula-bar/dims control cels) is generated by the buildSheet factory and hydrated by the host. See plastron-simple/docs/3-test-design/05-runCycle/spreadsheet-segment.md.",
+    "dependencies": [],
+    "role": "library"
+  },
+  {
+    "name": "user-space-ops",
+    "version": "1.0.0",
+    "description": "Chunk D of segment-lifecycle. User-space lifecycle ops as locked native cels: newUserSpace / saveUserSpace / loadUserSpace / closeUserSpace, plus the shared hydrate-closure helper (BFS the segment-store from a root, topo-order the not-yet-loaded transitive closure, hydrate in one call; idempotent). save persists only the user-space's PRIVATE closure (role:user-space deps whose applications array subsets the owner's); load auto-starts the parent application via hydrate-closure; close flushes the private closure root-first without evicting shared libraries. v1 defers dirty-flag auto-tracking and runUntilSettled-before-save. See plastron-simple/docs/4-current/02-hydration/ for the shipped surface and plastron-simple/docs/1-design/3-accepted/02-hydration/session-segments.md for the design.",
+    "dependencies": [
+      "segment-store"
+    ],
+    "role": "library"
+  },
+  {
+    "name": "segment-archive",
+    "version": "1.0.0",
+    "description": "Tiered + whole-workspace segment export/import as a role-foldered .zip (the .甲 archive). Five native ops: export-all / export-application / export-library / export-user (→ Uint8Array) and import (Uint8Array, opts.onlyRoles?). Built over dehydrate/hydrate + a zero-dependency zip core (CompressionStream('deflate-raw') + CRC32 + central directory; runtime-agnostic across browser/Bun/Node). The kernel closure is always excluded — it ships in the bundle and resolves on import. Layout: applications/ libraries/ user/ folders of <name>@<version>/{manifest,segment}.json plus plastron.index.json. Host wires the sink/source (browser download/upload, node-fs). See plastron-simple/docs/1-design/2-in-evaluation/segment-archive.md.",
+    "dependencies": [],
+    "role": "library"
+  },
+  {
+    "name": "app-host",
+    "version": "1.0.0",
+    "description": "plastron-OS launcher mechanism (rendering-agnostic). Cels os.active / os.apps / os.doc + native ops os.launch / os.switch / os.exit / os.register-app, composed over user-space-ops (newUserSpace / loadUserSpace / saveUserSpace). os.launch with a docName ensures the document's user-space is loaded; without one it just activates. The desktop application renders this state; the kernel stays the headless substrate. See plastron-simple/docs/1-design/1-under-consideration/plastron-os.md.",
+    "dependencies": [
+      "user-space-ops"
+    ],
+    "role": "library"
+  },
+  {
+    "name": "sound",
+    "version": "1.0.0",
+    "description": "Web Audio capability segment. Cels sound.play-tone (oscillator), sound.play-pcm (Float32 samples), sound.stop-all, plus sound.master-gain and sound.context-state. Browser-only — off-browser every fn is a silent no-op so app code is portable. Lazy AudioContext creation on first play (browser autoplay policy). Module-scoped runtime state (the context + active source set) is shared across States — matches the host/file-store singleton pattern.",
+    "dependencies": [],
+    "role": "library"
   }
 ]

@@ -1,9 +1,11 @@
 import type {
-  Cel, CelBody, FireableCel, Fn, Key, State,
+  Cel, CelBody, ComputeCel, FireableCel, Fn, Key, State,
 } from "../../types/index.js";
 import { isFireable } from "../../types/index.js";
 import { PRECOMPUTED_STATES_KEY, precompute, type PrecomputedIndexes } from "../precompute/index.js";
 import { compileCelBody } from "../lifecycle/hydrate/formula.js";
+import { hasHooksOrCache, makeLambdaTrampoline } from "../hooks.js";
+import { invalidate } from "../invalidate.js";
 import { affectedFor, runCascade } from "../runCycle.js";
 import { flushChannels, type SetOpts } from "./flush-channels.js";
 
@@ -87,8 +89,19 @@ const applyBodyAtomic = async (
   fcel._dispose = undefined;
   fcel._fn = undefined;
   fcel._buildEvaluate = undefined;
+  // Clear self-memo: the new body produces new outputs, so existing
+  // cache entries (keyed by old inputs → old outputs) are stale.
+  if ((fcel as ComputeCel)._memoCache) (fcel as ComputeCel)._memoCache!.clear();
   fcel.f = newF;
   await compileCelBody(fcel, state);
+  // Re-wrap LambdaCel _fn with the hook+memo trampoline (compileCelBody
+  // assigns the bare compiled fn; the wrap added at hydrate-time was
+  // overwritten). FormulaCels handle the gate via runCycle, no wrap needed.
+  if ((fcel.celType === "EditableLambdaCel" || fcel.celType === "LockedLambdaCel")
+      && hasHooksOrCache(fcel as ComputeCel)
+      && fcel._fn) {
+    fcel._fn = makeLambdaTrampoline(fcel._fn, fcel as ComputeCel, state);
+  }
   if (vInBody) fcel.v = body.v;
   return { topoChanged: true };
 };
@@ -138,6 +151,9 @@ export const setCel: Fn = async (
 ) => {
   const { topoChanged } = await applyBodyAtomic(state, key, body);
   if (topoChanged) precompute(state);
+  // Definition-change cache teardown: drop self + downstream consumers'
+  // _memoCache entries that were computed against the old definition.
+  invalidate(state, key);
   const seeds = expandUsageSeeds(state, [key]);
   await runCascade(state, affectedFor(state, seeds), new Set(seeds));
   if (opts?.flush) await flushChannels(state, opts.flush);
@@ -155,6 +171,7 @@ export const setCelBatch: Fn = async (
     if (result.topoChanged) topoChanged = true;
   }
   if (topoChanged) precompute(state);
+  for (const key of keys) invalidate(state, key);
   const seeds = expandUsageSeeds(state, keys);
   await runCascade(state, affectedFor(state, seeds), new Set(seeds));
   if (opts?.flush) await flushChannels(state, opts.flush);

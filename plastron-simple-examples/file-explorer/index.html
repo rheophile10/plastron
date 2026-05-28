@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>file-explorer — plastron</title>
+    <style>
+      :root { color-scheme: light dark; }
+      body { font: 14px/1.45 system-ui, sans-serif; margin: 0; padding: 1rem; }
+
+      .file-explorer { max-width: 50rem; margin: 0 auto; }
+      .fe-toolbar { display: flex; gap: .5rem; align-items: center;
+                    padding: .5rem 0; border-bottom: 1px solid #8884; }
+      .fe-toolbar button { font: inherit; padding: .35rem .75rem; cursor: pointer;
+                           background: #8882; border: 1px solid #8884; border-radius: .25rem; }
+      .fe-toolbar button.close { background: transparent; border: 0; font-size: 1.2rem; color: #888; }
+      .breadcrumb { font: 12px/1 ui-monospace, monospace; color: #888;
+                    padding: .5rem 0; }
+      .breadcrumb a { color: #007aff; cursor: pointer; text-decoration: none; }
+      .breadcrumb a:hover { text-decoration: underline; }
+
+      .fe-list { padding: .25rem 0; }
+      .fe-row { display: flex; gap: .5rem; padding: .35rem .5rem;
+                cursor: pointer; border-radius: .2rem; align-items: center; }
+      .fe-row:hover { background: #8881; }
+      .fe-row.empty { color: #888; cursor: default; }
+      .fe-row.empty:hover { background: transparent; }
+      .fe-row .ic { width: 1.5rem; }
+
+      .note { color: #888; font-size: .9rem; border-left: 2px solid #8884;
+              padding-left: .75rem; margin: 1rem auto; max-width: 50rem; }
+      code { font: 12px/1.4 ui-monospace, monospace; background: #8881;
+             padding: .1rem .3rem; border-radius: .2rem; }
+    </style>
+  </head>
+  <body>
+    <div id="app"></div>
+    <p class="note">Standalone file explorer — backed by
+       <code>segment-store</code> (OPFS in browser). Empty until you save
+       a document from another app (notepad, sheets, web-editor): files
+       saved there will appear here under <code>/notepad</code>,
+       <code>/sheets</code>, etc. Folders + drag-and-drop are real.</p>
+    <script type="module" src="./main.ts"></script>
+  </body>
+</html>

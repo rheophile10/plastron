@@ -1,0 +1,50 @@
+{
+  "name": "sheet",
+  "cels": [
+    {
+      "key": "infix",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "infix", "segment": "sheet", "name": "infix", "kind": "native",
+        "description": "Infix spreadsheet formula parser. A FormulaCel with parser \"infix\" and f like \"=A1*2\" compiles to a CompiledEnvelope; A1-style references resolve to sibling cell keys (A1 → sheet.A1) and auto-wire into inputMap. Supports + - * / & comparisons, unary -, parens, ranges, and SUM/MIN/MAX/AVG/IF."
+      },
+      "locked": true
+    },
+    {
+      "key": "sheet.commit-cell",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "sheet.commit-cell", "segment": "sheet", "kind": "native",
+        "description": "Action: write the editing draft into the target cell (set for value-into-ValueCel; re-install + recompute for literal↔formula kind changes), then clear the editor."
+      },
+      "locked": true
+    },
+    {
+      "key": "sheet.cancel-edit",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "sheet.cancel-edit", "segment": "sheet", "kind": "native",
+        "description": "Action: discard the editing draft (set sheet.editing to { editing:false, draft:\"\" })."
+      },
+      "locked": true
+    },
+    {
+      "key": "sheet.move-selection",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "sheet.move-selection", "segment": "sheet", "kind": "native",
+        "description": "Action: move the selection to an absolute {row,col} or by a {dr,dc} delta, clamped to sheet.dims; mirror the cell's source into sheet.formula-bar (batched)."
+      },
+      "locked": true
+    },
+    {
+      "key": "sheet.start-edit",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "sheet.start-edit", "segment": "sheet", "kind": "native",
+        "description": "Action: open the editor on the selected (or given) cell, seeding sheet.editing.draft with the cell's current source."
+      },
+      "locked": true
+    }
+  ]
+}

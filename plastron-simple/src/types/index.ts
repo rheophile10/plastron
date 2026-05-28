@@ -35,5 +35,8 @@ export type {
 } from "./wit.js";
 export { isWitPrimitive, isWasmHandle } from "./wit.js";
 export type { 甲骨, 冊 } from "./甲骨.js";
+export type { MemoConfig, MemoCache, ExecutionAccumulator, HookFn } from "./hooks.js";
 export type { ValueCel } from "./value.js";
-export type { State, Hydrate, Dehydrate, CelBody, RegisterLambdaArgs } from "./state.js";
+export type {
+  State, Hydrate, Dehydrate, DehydrateOptions, CelBody, RegisterLambdaArgs,
+} from "./state.js";

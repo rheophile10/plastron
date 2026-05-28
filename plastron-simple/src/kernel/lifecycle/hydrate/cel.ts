@@ -80,7 +80,13 @@ export const inflateCel = (dc: DehydratedCel): Cel => {
       if (dc.wave    !== undefined) cel.wave    = dc.wave;
       if (dc.locked  !== undefined) cel.locked  = dc.locked;
       if (dc.dynamic !== undefined) cel.dynamic = dc.dynamic;
-      if (dc.f       !== undefined) cel.f       = dc.f;
+      if (dc.f       !== undefined) {
+        // DehydratedCel.f accepts string | string[]; ComputeCel.f is
+        // a single string. Always-on join — no schema needed on the
+        // input side. The opt-in `lambda-source` schema's
+        // sourceDehydrate is what re-splits on the way out.
+        cel.f = Array.isArray(dc.f) ? dc.f.join("\n") : dc.f;
+      }
       return cel as Cel;
     }
   }

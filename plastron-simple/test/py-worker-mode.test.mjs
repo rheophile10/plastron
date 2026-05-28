@@ -1,4 +1,4 @@
-import { test, after } from "node:test";
+import { test, afterAll } from "bun:test";
 import assert from "node:assert/strict";
 import { createInitialState, resolveFn } from "../dist/index.js";
 import { _resetPyWorker } from "../dist/甲骨坑/py-compiler.js";
@@ -9,7 +9,7 @@ const baseManifest = { name: "user", version: "0.0.1", description: "test", depe
 // spawn is ~5s; we want to amortize it). Reset at file teardown so the
 // process doesn't dangle. Per-test resets would be honest but make the
 // file take ~20s.
-after(async () => {
+afterAll(async () => {
   await _resetPyWorker();
 });
 
@@ -24,8 +24,8 @@ test("py.worker-mode cel is seeded with v: false by default", () => {
 
 // ── opting into worker mode spawns the worker and flips py.ready ───────────
 
-test("flipping py.worker-mode true routes compile through the worker; py.ready transitions", async (t) => {
-  t.diagnostic("spawning Pyodide-in-worker; ~5s first time");
+test("flipping py.worker-mode true routes compile through the worker; py.ready transitions", { timeout: 60000 }, async () => {
+  console.log("spawning Pyodide-in-worker; ~5s first time");
 
   const state = createInitialState();
   // Opt in.
@@ -55,7 +55,7 @@ test("flipping py.worker-mode true routes compile through the worker; py.ready t
 
 // ── multiple compiles share the same worker ────────────────────────────────
 
-test("multiple worker-mode compiles share the singleton worker", async () => {
+test("multiple worker-mode compiles share the singleton worker", { timeout: 60000 }, async () => {
   const state = createInitialState();
   state.cels.get("py.worker-mode").v = true;
   const register = resolveFn(state, "registerLambda");
@@ -79,8 +79,8 @@ test("multiple worker-mode compiles share the singleton worker", async () => {
 
 // ── worker-mode calls integrate with runCycle's Promise-handling path ──────
 
-test("worker-mode py cels integrate with the runCycle cascade (Promise return)", async (t) => {
-  t.diagnostic("uses the singleton worker spawned above");
+test("worker-mode py cels integrate with the runCycle cascade (Promise return)", { timeout: 60000 }, async () => {
+  console.log("uses the singleton worker spawned above");
 
   const state = createInitialState();
   state.cels.get("py.worker-mode").v = true;
@@ -109,7 +109,7 @@ test("worker-mode py cels integrate with the runCycle cascade (Promise return)",
 
 // ── trap-as-value: a Python error in worker mode lands as a CelError ──────
 
-test("a Python exception in worker mode is transported as a CelError", async () => {
+test("a Python exception in worker mode is transported as a CelError", { timeout: 60000 }, async () => {
   const state = createInitialState();
   state.cels.get("py.worker-mode").v = true;
 

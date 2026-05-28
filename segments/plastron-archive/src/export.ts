@@ -5,6 +5,7 @@ import {
   ARCHIVE_FORMAT_VERSION, ARCHIVE_MIME,
   DEFAULT_SEGMENT_FORMAT,
   MANIFEST_PATH, SEGMENTS_DIR,
+  validateSegmentKey,
   type ArchiveManifest,
   type SegmentFormat,
 } from "./manifest.js";
@@ -34,23 +35,6 @@ export interface ExportOptions {
    *  `"plastron <plastron@local>"`. */
   author?: string;
 }
-
-// Reject keys that would produce confusing or unsafe filenames inside
-// the zip. `/` and `\` would create unintended subdirectories; leading
-// dots collide with `.` / `..`; NUL terminates C-strings.
-const validateSegmentKey = (key: string): void => {
-  if (
-    key === "" ||
-    key.includes("/") || key.includes("\\") ||
-    key.includes("\0") ||
-    key.startsWith(".")
-  ) {
-    throw new Error(
-      `Segment key ${JSON.stringify(key)} is not safe as a filename. ` +
-      `Avoid /, \\, NUL bytes, and leading dots.`,
-    );
-  }
-};
 
 const enc = new TextEncoder();
 

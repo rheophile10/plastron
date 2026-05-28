@@ -1,0 +1,7 @@
+dist/
+node_modules/
+bun.lock
+# Symlink (or copy) to a freedoom IWAD for the demo's auto-load path.
+# 28+ MB — never commit. README documents how to set this up.
+freedoom1.wad
+*.wad

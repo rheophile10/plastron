@@ -1,0 +1,12 @@
+{
+  "name": "plastron-simple-sheets-example",
+  "private": true,
+  "type": "module",
+  "version": "0.0.1",
+  "description": "Standalone sheets demo — buildSheetsApp + file toolbar, the same setup the plastron-OS desktop uses.",
+  "scripts": {
+    "bundle": "bun build index.html --target=browser --outdir dist --external pyodide --external quickjs-emscripten --external wabt --external node:fs/promises --external node:path",
+    "serve": "bun serve.ts",
+    "dev": "bun run bundle && bun run serve"
+  }
+}

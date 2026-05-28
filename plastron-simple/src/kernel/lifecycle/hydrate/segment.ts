@@ -24,21 +24,98 @@ import { compileCelBody } from "./formula.js";
 //     the same batch as the cels that use it Just Works.
 // ============================================================================
 
+/** Apply defaults for the segment-classification fields when absent.
+ *  Mutates the manifest in place — manifests pass through hydrate once
+ *  and live thereafter in state.segments, so in-place is fine. */
+export const applyManifestDefaults = (m: 冊): void => {
+  if (m.role === undefined) m.role = "library";
+  // applications: left undefined when absent. Required on user-space
+  // (caught by validation below); optional otherwise.
+};
+
+/** Resolve a manifest's role from the local hydrate batch first, then
+ *  from already-loaded state.segments. */
+const lookupRole = (
+  name: Key,
+  state: State,
+  batch: Map<Key, 冊>,
+): Key | undefined => {
+  return (batch.get(name) ?? state.segments.get(name))?.role;
+};
+
 export const validateManifests = (state: State, manifests: 冊[]): void => {
   if (manifests.length === 0) return;
+  for (const m of manifests) applyManifestDefaults(m);
+
+  const batch = new Map<Key, 冊>();
+  for (const m of manifests) batch.set(m.name, m);
   const allKnown = new Map(state.segments);
   for (const m of manifests) allKnown.set(m.name, m);
 
-  const missing: Array<{ segment: Key; needs: Key }> = [];
+  const errors: string[] = [];
+  const warnings: string[] = [];
+
   for (const m of manifests) {
+    // Rule 0 (existing): every dep must be installable.
     for (const dep of m.dependencies) {
-      if (!allKnown.has(dep)) missing.push({ segment: m.name, needs: dep });
+      if (!allKnown.has(dep)) {
+        errors.push(`"${m.name}" needs unknown dependency "${dep}"`);
+      }
+    }
+    // Rule 1: user-space MUST declare applications with ≥1 entry.
+    if (m.role === "user-space") {
+      if (!m.applications || m.applications.length === 0) {
+        errors.push(`"${m.name}" (user-space) must declare \`applications\` with at least one entry`);
+      } else {
+        // Rule 2: each application entry must resolve to a role:application segment.
+        for (const a of m.applications) {
+          const ar = lookupRole(a, state, batch);
+          if (ar === undefined) {
+            errors.push(`"${m.name}" declares application "${a}" but no such segment is installed or in this hydrate batch`);
+          } else if (ar !== "application") {
+            errors.push(`"${m.name}" declares application "${a}" but that segment has role "${ar}", not "application"`);
+          }
+        }
+      }
+    }
+    // Rules 3-5: dep direction must respect kernel ← library ← application ← user-space.
+    const myRole = m.role!;
+    for (const dep of m.dependencies) {
+      const depRole = lookupRole(dep, state, batch);
+      if (depRole === undefined) continue; // missing-dep error already raised above
+      if (myRole === "library" && (depRole === "application" || depRole === "user-space")) {
+        errors.push(`"${m.name}" (library) cannot depend on "${dep}" (${depRole}); libraries must be upstream of apps and user data`);
+      }
+      if (myRole === "application" && depRole === "user-space") {
+        errors.push(`"${m.name}" (application) cannot depend on "${dep}" (user-space); apps don't depend on the user data inside them`);
+      }
+      if (myRole === "kernel" && depRole !== "kernel") {
+        errors.push(`"${m.name}" (kernel) can only depend on other kernel segments; "${dep}" has role "${depRole}"`);
+      }
+    }
+    // Library `applications` advisory mismatch check (warning, not error).
+    if (m.role === "user-space" && m.applications) {
+      for (const dep of m.dependencies) {
+        const depManifest = batch.get(dep) ?? state.segments.get(dep);
+        if (!depManifest || depManifest.role !== "library") continue;
+        if (!depManifest.applications || depManifest.applications.length === 0) continue;
+        const overlap = depManifest.applications.some((a) => m.applications!.includes(a));
+        if (!overlap) {
+          warnings.push(`"${m.name}" depends on library "${dep}" tagged for ${JSON.stringify(depManifest.applications)} but user-space targets ${JSON.stringify(m.applications)}`);
+        }
+      }
     }
   }
-  if (missing.length > 0) {
+
+  if (warnings.length > 0) {
+    // Best-effort warning surface; no formal logger in plastron-simple yet.
+    // eslint-disable-next-line no-console
+    console?.warn?.("hydrate: segment classification warnings:\n" + warnings.map((w) => "  - " + w).join("\n"));
+  }
+  if (errors.length > 0) {
     throw new Error(
-      `hydrate: unsatisfied segment dependencies:\n` +
-      missing.map((m) => `  - "${m.segment}" needs "${m.needs}"`).join("\n"),
+      `hydrate: segment validation failed:\n` +
+      errors.map((e) => `  - ${e}`).join("\n"),
     );
   }
 };

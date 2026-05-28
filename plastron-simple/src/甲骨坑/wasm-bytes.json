@@ -1,0 +1,69 @@
+{
+  "name": "wasm-bytes",
+  "cels": [
+    {
+      "key": "wasm",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "wasm", "segment": "wasm-bytes", "name": "wasm", "kind": "native",
+        "description": "Precompiled-wasm loader. Takes a precompiled .wasm module as base64 bytes (inline source) or a 'file-store:<path>' reference, instantiates it via WebAssembly.instantiate, and exposes one export as a callable Fn. The sibling to wat/py/quickjs that takes bytes instead of source. Export chosen by metadata.wasmExport (else prefer 'main', else the single export). Imports default to { host }; metadata.imports names a provider cel for WASI/env shims. Gated on csp.wasm-available."
+      },
+      "locked": true
+    },
+    {
+      "key": "load-deps.wasm",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "load-deps.wasm", "segment": "wasm-bytes", "schema": "boolean",
+        "description": "Bootstrap switch: should the wasm loader be ready? Defaults true. No runtime to lazy-load (WebAssembly is a host global), so this is informational symmetry with worker-backed kinds."
+      },
+      "v": true
+    },
+    {
+      "key": "wasm.ready",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "wasm.ready", "segment": "wasm-bytes", "schema": "boolean",
+        "description": "Runtime-ready sentinel. The wasm loader runs main-thread against the host WebAssembly global, so this is always true post-install."
+      },
+      "v": true
+    },
+    {
+      "key": "wasm.alive",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "wasm.alive", "segment": "wasm-bytes", "schema": "boolean",
+        "description": "Catastrophic-death sentinel. Main-thread loader never dies, so trivially true."
+      },
+      "v": true
+    },
+    {
+      "key": "wasm.errors",
+      "celType": "ValueCel",
+      "metadata": {
+        "key": "wasm.errors", "segment": "wasm-bytes", "schema": "array",
+        "description": "Append-only log of CelError values produced by wasm lambdas. v1: empty; instantiate/link errors live on the failed cel's v via trap-as-value."
+      },
+      "v": []
+    },
+
+    {
+      "key": "wasm-to-js",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "wasm-to-js", "segment": "wasm-bytes", "name": "wasm-to-js", "kind": "native",
+        "description": "Bridge: convert a wasm-domain value to a JS-domain value. Scalars (i32/u32/f32/f64, i64/u64 as BigInt) are JS-equivalent on the wire, so identity. A composite WasmHandle { kind:'wasm', ref } is dereferenced from the module-side value table and released. Authors invoke via formula syntax: (wasm-to-js someCel)."
+      },
+      "locked": true
+    },
+    {
+      "key": "js-to-wasm",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "js-to-wasm", "segment": "wasm-bytes", "name": "js-to-wasm", "kind": "native",
+        "description": "Bridge: convert a JS-domain value to a wasm-domain value. Scalars are identity (the wasm ABI accepts JS numbers via WebAssembly's coercion). Authors invoke via formula syntax: (js-to-wasm someCel)."
+      },
+      "locked": true
+    }
+  ]
+}

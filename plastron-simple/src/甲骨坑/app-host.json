@@ -1,0 +1,50 @@
+{
+  "name": "app-host",
+  "cels": [
+    {
+      "key": "os.active",
+      "celType": "ValueCel",
+      "metadata": { "key": "os.active", "segment": "app-host", "description": "The running app id, or \"home\" for the launcher." },
+      "v": "home"
+    },
+    {
+      "key": "os.apps",
+      "celType": "ValueCel",
+      "metadata": { "key": "os.apps", "segment": "app-host", "description": "Installed-app registry: [{ id, title, icon, application }]. Seeded by the host/desktop." },
+      "v": []
+    },
+    {
+      "key": "os.doc",
+      "celType": "ValueCel",
+      "metadata": { "key": "os.doc", "segment": "app-host", "description": "The active document (user-space name) when an app was launched with one, else null." },
+      "v": null
+    },
+    {
+      "key": "os.launch",
+      "celType": "LockedLambdaCel",
+      "metadata": {
+        "key": "os.launch", "segment": "app-host", "kind": "native",
+        "description": "(state, appId, docName?, opts?) → activate an app. With a docName, ensure its user-space is loaded (loadUserSpace if in the store, else newUserSpace under the app's application; opts.save===false → no persist), then set os.active + os.doc."
+      },
+      "locked": true
+    },
+    {
+      "key": "os.switch",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "os.switch", "segment": "app-host", "kind": "native", "description": "(state, appId) → set os.active (the app is already loaded)." },
+      "locked": true
+    },
+    {
+      "key": "os.exit",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "os.exit", "segment": "app-host", "kind": "native", "description": "(state, opts?) → return to the launcher; opts.save && os.doc → saveUserSpace first. Sets os.active=\"home\", os.doc=null." },
+      "locked": true
+    },
+    {
+      "key": "os.register-app",
+      "celType": "LockedLambdaCel",
+      "metadata": { "key": "os.register-app", "segment": "app-host", "kind": "native", "description": "(state, app) → append { id, title, icon, application } to os.apps (idempotent by id)." },
+      "locked": true
+    }
+  ]
+}
