@@ -89,9 +89,6 @@ const setupDoom = async (): Promise<void> => {
   const setStatus = async (msg: string): Promise<void> => {
     await (r("set") as (...a: unknown[]) => Promise<unknown>)(state, "doom.status", msg);
   };
-  const setNeedsWad = async (needs: boolean): Promise<void> => {
-    await (r("set") as (...a: unknown[]) => Promise<unknown>)(state, "doom.needs-wad", needs);
-  };
 
   // OPFS-first asset loader (see doc block above setupDoom). One source-order
   // chain shared by doom.wasm + freedoom1.wad: cache hit → embedded gz blob
@@ -141,18 +138,11 @@ const setupDoom = async (): Promise<void> => {
         f: `(if (eq active "doom") "#app" null)` },
       { key: "doom.status", celType: "ValueCel",
         metadata: { key: "doom.status", segment: "doom" }, v: "" },
-      { key: "doom.needs-wad", celType: "ValueCel",
-        metadata: { key: "doom.needs-wad", segment: "doom" }, v: false },
-      { key: "doom.wad-picker-display", celType: "FormulaCel",
-        metadata: { key: "doom.wad-picker-display", segment: "doom", parser: "f",
-                    inputMap: { needs: "doom.needs-wad" } },
-        f: `(if needs "block" "none")` },
       {
         key: "doom.view", celType: "FormulaCel",
         metadata: { key: "doom.view", segment: "doom", parser: "html-template",
                     schema: "render-spec", channel: ["plastron-dom.paint"],
-                    inputMap: { mount: "doom.mount", status: "doom.status",
-                                wadPickerDisplay: "doom.wad-picker-display" } },
+                    inputMap: { mount: "doom.mount", status: "doom.status" } },
         f: `<div class="doom">
   <div class="toolbar">
     <button class="close" onClick={{(dispatch "os.exit")}}>×</button>
@@ -160,10 +150,6 @@ const setupDoom = async (): Promise<void> => {
     <span class="doom-status">{{status}}</span>
   </div>
   <canvas id="doom-screen" tabindex="0" width="640" height="400"></canvas>
-  <label class="doom-wad-picker" style="display:{{wadPickerDisplay}};padding:.75rem">
-    Choose a WAD to play:
-    <input type="file" accept=".wad" onChange={{(dispatch "doom.wad-picked")}} />
-  </label>
 </div>`,
       },
       // Side-effect cel: re-fires whenever os.active changes. When the
@@ -251,23 +237,11 @@ const setupDoom = async (): Promise<void> => {
     await setStatus("running");
   };
 
-  // doom.wad-picked — file-input change handler. Reads bytes from the
-  // chosen file and starts the engine.
-  await r("registerLambda")(state, {
-    key: "doom.wad-picked", kind: "custom",
-    fn: async (_st: unknown, _p: unknown, event: { target?: { files?: FileList | null } }): Promise<unknown> => {
-      const file = event?.target?.files?.[0];
-      if (!file) return state;
-      const wadBytes = new Uint8Array(await file.arrayBuffer());
-      await setNeedsWad(false);
-      await bootEngineWith(wadBytes, file.name);
-      return state;
-    },
-  });
-
   // doom.boot — main entry, called from doom.maybe-boot. Source order
-  // for the WAD: inlined gz-b64 (bundle pre-pass) → fetch ./freedoom1.wad
-  // (dev server) → user picker (page deployed without a sidecar WAD).
+  // for the WAD: OPFS cache → inlined gz-b64 (bundle pre-pass) → fetch
+  // ./freedoom1.wad (dev server proxy). No user picker — if every source
+  // fails the status surfaces the missing-asset error and bundling needs
+  // to be re-run with freedoom1.wad available at build time.
   await r("registerLambda")(state, {
     key: "doom.boot", segment: "doom", kind: "native", locked: true,
     fn: async (): Promise<unknown> => {
@@ -281,8 +255,10 @@ const setupDoom = async (): Promise<void> => {
           label: "freedoom1.wad",
         });
         if (!wadBytes) {
-          await setStatus("no WAD found alongside the page — please choose one");
-          await setNeedsWad(true);
+          await setStatus(
+            "freedoom1.wad missing — re-run plastron-os/bundle.ts with a " +
+            "freedoom WAD symlinked at plastron-simple-examples/doom/freedoom1.wad",
+          );
           return state;
         }
         await bootEngineWith(wadBytes, "freedoom1.wad");

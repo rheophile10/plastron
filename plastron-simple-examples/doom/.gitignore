@@ -1,7 +1,13 @@
 dist/
 node_modules/
 bun.lock
-# Symlink (or copy) to a freedoom IWAD for the demo's auto-load path.
-# 28+ MB — never commit. README documents how to set this up.
-freedoom1.wad
-*.wad
+# freedoom1.wad is now committed (28 MB; CC-BY-SA, freely redistributable)
+# so the GitHub Actions Pages build can inline it into the plastron-os
+# bundle without a separate download step. Other *.wad files (the user's
+# own copies of commercial IWADs — doom1.wad, doom2.wad, etc.) are still
+# excluded; they're the user's licensed property to manage locally.
+doom1.wad
+doom.wad
+doom2.wad
+tnt.wad
+plutonia.wad
