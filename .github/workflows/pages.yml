@@ -1,0 +1,72 @@
+# Deploys the bundled plastron-OS (a single self-contained index.html) to
+# GitHub Pages on every push to master. The bundle is reproducible from
+# source — never commit dist/ — so the workflow rebuilds from scratch each
+# time. The kernel needs a tsc compile first (plastron-simple's `build`
+# script); plastron-os's bundle.ts then bundles its browser-main.ts +
+# kernel into one HTML.
+#
+# Configure once: Settings → Pages → Source: "GitHub Actions".
+
+name: Deploy plastron-OS to GitHub Pages
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+# https://docs.github.com/en/pages/getting-started-with-github-pages/using-custom-workflows-with-github-pages
+permissions:
+  contents: read
+  pages: write
+  id-token: write
+
+# Allow only one concurrent deployment, but never cancel an in-progress one
+# so a deploy mid-flight isn't interrupted by a follow-up push.
+concurrency:
+  group: pages
+  cancel-in-progress: false
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Bun
+        uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Install kernel deps
+        working-directory: plastron-simple
+        run: bun install --frozen-lockfile || bun install
+
+      - name: Build kernel (tsc → dist/)
+        working-directory: plastron-simple
+        run: bun run build
+
+      - name: Bundle plastron-OS
+        working-directory: plastron-simple-examples/plastron-os
+        run: bun bundle.ts
+
+      - name: Setup Pages
+        uses: actions/configure-pages@v5
+
+      - name: Upload artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          # The whole dist/ — Bun emits a single index.html via inline-assets,
+          # but uploading the directory keeps room for future sidecars.
+          path: plastron-simple-examples/plastron-os/dist
+
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    steps:
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4
