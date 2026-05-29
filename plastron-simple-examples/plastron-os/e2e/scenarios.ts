@@ -134,10 +134,13 @@ const scNotepadLifecycle = async (page: Page, suffix: string): Promise<{ docA: s
 
   await page.locator('button:has-text("Notepad")').first().click();
   ok(await waitForCel(page, "os.active", "notepad"), "Notepad launched");
+  // wait for the painter rAF — the view rebuilds when active flips.
+  await page.locator("textarea.pad").first().waitFor({ state: "visible", timeout: 2000 });
   ok(await page.locator("textarea.pad").isVisible(), "textarea visible");
 
   // Toolbar's New / Save / Open are present.
   for (const cls of ["ft-new", "ft-save", "ft-open"]) {
+    await page.locator(`button.${cls}`).first().waitFor({ state: "visible", timeout: 2000 });
     ok(await page.locator(`button.${cls}`).isVisible(), `toolbar ${cls} visible`);
   }
 
