@@ -32,6 +32,19 @@ const FS_TREE = "fs-tree";
 interface StoreListEntry { name: string; latest: string }
 interface FileEntry { name: string; manifest: { role?: string; applications?: string[]; version?: string } }
 
+/** What each application advertises to the file explorer: the segment key,
+ *  the human title, a filename extension, and a file icon. Apps register
+ *  this at boot via `fe.register-app`; the explorer + picker read it back
+ *  to render icons + drive Save / Open's extension logic. */
+export interface AppType {
+  key: string;             // segment name, e.g. "notepad"
+  title: string;           // human title, e.g. "Notepad"
+  extension: string;       // no leading dot, e.g. "txt"; "" for apps that don't own a file type
+  icon: string;            // grapheme/emoji rendered in file cards, e.g. "📝"
+}
+
+export const DESKTOP_FOLDER = "/Desktop";
+
 type State = unknown;
 const get = (state: State, k: string): unknown =>
   (resolveFn(state as never, "get") as (...a: unknown[]) => unknown)(state as never, k);
@@ -156,6 +169,33 @@ export const mkdir = async (state: State, namePayload?: string): Promise<string 
   return path;
 };
 
+/** Register an application's type info — segment key, title, file
+ *  extension, and file icon. Apps call this at boot; the cel is a denormalised
+ *  Record<key, AppType> the renderer + file-toolbar can do O(1) lookups against. */
+export const registerApp = async (state: State, app: AppType): Promise<void> => {
+  if (!app || !app.key) return;
+  const current = { ...((get(state, "fe.app-types") as Record<string, AppType> | undefined) ?? {}) };
+  current[app.key] = {
+    key: String(app.key),
+    title: String(app.title ?? app.key),
+    extension: String(app.extension ?? ""),
+    icon: String(app.icon ?? "📄"),
+  };
+  await set(state, "fe.app-types", current);
+};
+
+/** Lookup the icon for a file by walking manifest.applications[0] → app-types. */
+const iconFor = (types: Record<string, AppType> | undefined, app: string | undefined): string => {
+  if (app && types?.[app]?.icon) return types[app]!.icon;
+  return "📄";
+};
+
+/** Lookup the extension for an app key (no leading dot). */
+export const extensionFor = (state: State, app: string): string => {
+  const types = (get(state, "fe.app-types") as Record<string, AppType> | undefined) ?? {};
+  return types[app]?.extension ?? "";
+};
+
 /** Move a file (by segment name) into folder `path`. */
 export const move = async (state: State, name: string, path: string): Promise<void> => {
   if (!name || !path) return;
@@ -222,12 +262,14 @@ const renderBreadcrumb = (cwd: string): string => {
 };
 
 /** Render the body: an .. card if not at root, then folder cards (drop
- *  targets), then file cards (draggable). */
+ *  targets), then file cards (draggable). File icons come from app-types
+ *  (registered by each application at boot). */
 export const renderExplorerBody = (
   cwd: string | undefined,
   folders: string[] | undefined,
   locations: Record<string, string> | undefined,
   items: FileEntry[] | undefined,
+  appTypes: Record<string, AppType> | undefined,
 ): string => {
   const cn = normalize(cwd ?? "/");
   const allFolders = folders ?? [];
@@ -250,14 +292,16 @@ export const renderExplorerBody = (
          + `onDrop={{(dispatch "fe.drop" "${esc(folder)}")}}>📁 ${display}</button>`;
   }
   for (const f of filesHere) {
-    const app = esc(f.manifest.applications?.[0] ?? "unfiled");
+    const app = f.manifest.applications?.[0] ?? "unfiled";
+    const icon = iconFor(appTypes, app);
     html += `<div class="card file" draggable="true" `
          + `onDragStart={{(dispatch "fe.dragstart" "${esc(f.name)}")}} `
          + `onClick={{(dispatch "fe.open" "${esc(f.name)}")}}>`
-         + `📄 ${esc(f.name)}<small>${app}</small></div>`;
+         + `${esc(icon)} ${esc(f.name)}<small>${esc(app)}</small></div>`;
   }
-  if (subfolders.length === 0 && filesHere.length === 0 && cn === "/") {
-    html += `<p class="empty">Empty. Open Notepad or Sheets and use Save to create a file.</p>`;
+  if (subfolders.length === 0 && filesHere.length === 0) {
+    const here = cn === "/" ? "Empty" : `Nothing in ${esc(cn)}`;
+    html += `<p class="empty">${here}. Use Save in an app to put a file here.</p>`;
   }
 
   return html + `</div>`;
@@ -273,14 +317,15 @@ const TEMPLATE = `
     <span class="breadcrumb-host">{{(renderBreadcrumb cwd)}}</span>
     <button class="mkdir" onClick={{(dispatch "fe.mkdir")}}>+ Folder</button>
   </div>
-  {{(renderExplorerBody cwd folders locations items)}}
+  {{(renderExplorerBody cwd folders locations items appTypes)}}
 </div>`;
 
 /** Lookup the app ids that should get default folders at first-boot
- *  bootstrap. Reads os.apps so the seed naturally tracks the icon roster. */
+ *  bootstrap. Reads os.apps so the seed naturally tracks the icon roster.
+ *  /Desktop is always seeded too — it's the well-known "home" location. */
 const knownApps = (state: State): string[] => {
   const apps = (get(state, "os.apps") as Array<{ id?: string; application?: string }> | undefined) ?? [];
-  const out: string[] = [];
+  const out: string[] = [DESKTOP_FOLDER];
   for (const a of apps) {
     const id = a.application ?? a.id;
     if (id && id !== "file-explorer") out.push(`/${id}`);
@@ -301,6 +346,7 @@ export const setupFileExplorer = async (state: State): Promise<void> => {
   await reg(state, { key: "fe.dragstart", fn: dragstart, kind: "custom" });
   await reg(state, { key: "fe.dragover",  fn: dragover,  kind: "custom" });
   await reg(state, { key: "fe.drop",      fn: drop,      kind: "custom" });
+  await reg(state, { key: "fe.register-app", fn: registerApp, kind: "custom" });
   await reg(state, { key: "if", fn: (c: unknown, a: unknown, b: unknown) => (c ? a : b), kind: "custom" });
   await reg(state, { key: "eq", fn: (a: unknown, b: unknown) => a === b, kind: "custom" });
 
@@ -314,7 +360,12 @@ export const setupFileExplorer = async (state: State): Promise<void> => {
       { key: "fs-tree.folders",   celType: "ValueCel", metadata: { key: "fs-tree.folders",   segment: "file-explorer" }, v: [] },
       { key: "fs-tree.locations", celType: "ValueCel", metadata: { key: "fs-tree.locations", segment: "file-explorer" }, v: {} },
       { key: "file-explorer.items", celType: "ValueCel", metadata: { key: "file-explorer.items", segment: "file-explorer" }, v: [] },
-      { key: "file-explorer.cwd",   celType: "ValueCel", metadata: { key: "file-explorer.cwd",   segment: "file-explorer" }, v: "/" },
+      { key: "file-explorer.cwd",   celType: "ValueCel", metadata: { key: "file-explorer.cwd",   segment: "file-explorer" }, v: DESKTOP_FOLDER },
+      // App-type registry — each app calls fe.register-app({key, title,
+      // extension, icon}) at its own setup, accumulating into this map.
+      // Used by the explorer + picker to render file icons, and by
+      // file-toolbar to append extensions to new doc names.
+      { key: "fe.app-types", celType: "ValueCel", metadata: { key: "fe.app-types", segment: "file-explorer" }, v: {} },
       {
         key: "file-explorer.mount", celType: "FormulaCel",
         metadata: { key: "file-explorer.mount", segment: "file-explorer", parser: "f", inputMap: { active: "os.active" } },
@@ -331,6 +382,7 @@ export const setupFileExplorer = async (state: State): Promise<void> => {
             cwd: "file-explorer.cwd",
             folders: "fs-tree.folders",
             locations: "fs-tree.locations",
+            appTypes: "fe.app-types",
           },
         },
         f: TEMPLATE,
@@ -338,6 +390,10 @@ export const setupFileExplorer = async (state: State): Promise<void> => {
     ],
   };
   await callFn(state, "hydrate", [seg], [{ name: seg.name, version: seg.version, dependencies: seg.dependencies, role: "application" }]);
+
+  // Self-register as an app-type so any future "file" with applications:
+  // ["file-explorer"] (we don't have any yet) renders with our 🗂 icon.
+  await registerApp(state, { key: "file-explorer", title: "Files", extension: "", icon: "🗂" });
 
   // Seed + load fs-tree, then run a refresh so the current store is reflected.
   await ensureFsTree(state, knownApps(state));

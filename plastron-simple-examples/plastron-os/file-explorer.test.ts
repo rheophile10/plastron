@@ -42,7 +42,7 @@ test("File Explorer v2 — fs-tree seeded; new docs auto-file under /<app>; mkdi
   const r = (k) => resolveFn(state, k);
   const get = (k) => r("get")(state, k);
   const tag = `fe2${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
-  const docA = `fe2-A-${tag}`, docB = `fe2-B-${tag}`;
+  const docA = `fe2-A-${tag}.txt`, docB = `fe2-B-${tag}.txt`;
 
   // Boot leaves fs-tree seeded with at least the app folders.
   const seededFolders = get("fs-tree.folders");
@@ -116,4 +116,83 @@ test("File Explorer v2 — fs-tree seeded; new docs auto-file under /<app>; mkdi
   assert.ok(folders3.includes(folder), `[reload] folders includes ${folder} (got ${JSON.stringify(folders3)})`);
   assert.equal(locs3[docA], folder, `[reload] ${docA} location restored`);
   assert.equal(locs3[docB], folder, `[reload] ${docB} location restored`);
+});
+
+test("apps self-register their app-type with file-explorer; /Desktop seeded with README", async () => {
+  const root = mkEl("app");
+  globalThis.document = {
+    createElement: mkEl, createTextNode: (s) => ({ nodeType: 3, data: s }),
+    querySelector: (s) => (s === "#app" ? root : s === "#modal" ? mkEl("div") : null),
+  };
+
+  const { bootOS } = await import("./browser-main.ts");
+  const { state } = await bootOS();
+  const { resolveFn } = await import("../../plastron-simple/dist/index.js");
+  const r = (k) => resolveFn(state, k);
+  const get = (k) => r("get")(state, k);
+
+  // fe.app-types populated by each app's setup.
+  const types = get("fe.app-types") ?? {};
+  for (const expected of ["notepad", "sheets", "doom", "file-explorer"]) {
+    assert.ok(types[expected], `app-types includes ${expected} (got ${Object.keys(types).join(", ")})`);
+    assert.ok(types[expected].key === expected, `app-type's key matches: ${expected}`);
+    assert.ok(typeof types[expected].icon === "string" && types[expected].icon.length > 0, `${expected}.icon set`);
+  }
+  assert.equal(types.notepad.extension, "txt", "notepad extension is txt");
+  assert.equal(types.sheets.extension, "csv", "sheets extension is csv");
+  assert.equal(types.doom.extension, "wad", "doom extension is wad");
+
+  // Per-app value cels also expose the type.
+  assert.deepEqual(state.cels.get("notepad.app-type")?.v, types.notepad, "notepad.app-type cel matches registry");
+  assert.deepEqual(state.cels.get("sheets.app-type")?.v, types.sheets,   "sheets.app-type cel matches registry");
+  assert.deepEqual(state.cels.get("doom.app-type")?.v,   types.doom,     "doom.app-type cel matches registry");
+
+  // /Desktop is in the seeded folder list.
+  assert.ok((get("fs-tree.folders") ?? []).includes("/Desktop"), "/Desktop is a seeded folder");
+
+  // Default cwd lands on /Desktop so the README is what the user sees first.
+  assert.equal(get("file-explorer.cwd"), "/Desktop", "explorer starts at /Desktop");
+
+  // README.txt was created at /Desktop on first boot.
+  const locations = get("fs-tree.locations") ?? {};
+  assert.equal(locations["README.txt"], "/Desktop", "README is on the Desktop");
+
+  // The README has actual content (use fe.open, which handles load +
+  // os.launch — file.open requires the app to already be active).
+  await r("fe.open")(state, "README.txt");
+  assert.equal(get("os.doc"), "README.txt", "README opened");
+  assert.equal(get("os.active"), "notepad", "notepad launched to read it");
+  assert.match(get("notepad.text"), /plastron-OS/, "README content includes a plastron-OS heading");
+});
+
+test("fileNew appends the app's extension when missing, keeps it when present", async () => {
+  const root = mkEl("app");
+  globalThis.document = {
+    createElement: mkEl, createTextNode: (s) => ({ nodeType: 3, data: s }),
+    querySelector: (s) => (s === "#app" ? root : s === "#modal" ? mkEl("div") : null),
+  };
+
+  const { bootOS } = await import("./browser-main.ts");
+  const { state } = await bootOS();
+  const { resolveFn } = await import("../../plastron-simple/dist/index.js");
+  const r = (k) => resolveFn(state, k);
+  const get = (k) => r("get")(state, k);
+  const tag = `ext${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
+
+  // 1. Notepad with no extension → .txt appended.
+  await r("os.switch")(state, "notepad");
+  await r("file.new")(state, `bare-${tag}`);
+  assert.equal(get("os.doc"), `bare-${tag}.txt`, "notepad file got .txt");
+  await r("os.exit")(state);
+
+  // 2. Notepad with .txt → not double-appended.
+  await r("os.switch")(state, "notepad");
+  await r("file.new")(state, `pre-${tag}.txt`);
+  assert.equal(get("os.doc"), `pre-${tag}.txt`, "existing .txt preserved");
+  await r("os.exit")(state);
+
+  // 3. Sheets gets .csv.
+  await r("os.switch")(state, "sheets");
+  await r("file.new")(state, `sheet-${tag}`);
+  assert.equal(get("os.doc"), `sheet-${tag}.csv`, "sheets file got .csv");
 });

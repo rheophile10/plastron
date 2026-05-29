@@ -106,6 +106,8 @@ const renderPickerBreadcrumb = (cwd: string): string => {
   return segs.join('<span class="sep">›</span>');
 };
 
+interface AppType { key: string; title: string; extension: string; icon: string }
+
 /** Render the modal body — the folder + file grid scoped to `app`. */
 export const renderPickerBody = (
   app: string | null | undefined,
@@ -113,6 +115,7 @@ export const renderPickerBody = (
   folders: string[] | undefined,
   locations: Record<string, string> | undefined,
   items: FileEntry[] | undefined,
+  appTypes: Record<string, AppType> | undefined,
 ): string => {
   // Closed state — empty placeholder; CSS hides the wrapper via [data-open=false].
   if (!app) return `<div class="picker-empty"></div>`;
@@ -121,6 +124,8 @@ export const renderPickerBody = (
   const allFolders = folders ?? [];
   const locs = locations ?? {};
   const allItems = items ?? [];
+  const fileIcon = appTypes?.[app]?.icon ?? "📄";
+  const appTitle = appTypes?.[app]?.title ?? app;
 
   // App-scoped: only show files whose manifest.applications includes `app`.
   // Folders aren't app-scoped (a user can drop any file anywhere); we still
@@ -138,10 +143,10 @@ export const renderPickerBody = (
     body += `<button class="card folder" onClick={{(dispatch "picker.cd" "${esc(folder)}")}}>📁 ${esc(childName(folder))}</button>`;
   }
   for (const f of filesHere) {
-    body += `<button class="card file" onClick={{(dispatch "picker.select" "${esc(f.name)}")}}>📄 ${esc(f.name)}</button>`;
+    body += `<button class="card file" onClick={{(dispatch "picker.select" "${esc(f.name)}")}}>${esc(fileIcon)} ${esc(f.name)}</button>`;
   }
   if (subfolders.length === 0 && filesHere.length === 0) {
-    body += `<p class="empty">No ${esc(app)} files here. Click 📁 / to start at the root.</p>`;
+    body += `<p class="empty">No ${esc(appTitle)} files here. Click 📁 / to start at the root.</p>`;
   }
   body += `</div>`;
 
@@ -149,7 +154,7 @@ export const renderPickerBody = (
     <div class="picker-backdrop" onClick={{(dispatch "picker.cancel")}}></div>
     <div class="picker-panel" onClick={{(dispatch "picker.swallow")}}>
       <div class="picker-bar">
-        <span class="picker-title">Open in ${esc(app)}</span>
+        <span class="picker-title">Open in ${esc(appTitle)}</span>
         <span class="breadcrumb-host">${renderPickerBreadcrumb(cn)}</span>
         <button class="picker-x" onClick={{(dispatch "picker.cancel")}}>×</button>
       </div>
@@ -161,7 +166,7 @@ export const renderPickerBody = (
 
 const TEMPLATE = `
 <div class="picker-root" data-open="{{(boolStr app)}}">
-  {{(renderPickerBody app cwd folders locations items)}}
+  {{(renderPickerBody app cwd folders locations items appTypes)}}
 </div>`;
 
 export const setupFilePicker = async (state: State): Promise<void> => {
@@ -212,6 +217,7 @@ export const setupFilePicker = async (state: State): Promise<void> => {
             folders: "fs-tree.folders",
             locations: "fs-tree.locations",
             items: "file-explorer.items",
+            appTypes: "fe.app-types",
           },
         },
         f: TEMPLATE,

@@ -50,7 +50,7 @@ test("file picker — open → navigate → select → close", async () => {
   const get = (k) => r("get")(state, k);
 
   const tag = `pk${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
-  const docA = `pick-A-${tag}`, docB = `pick-B-${tag}`;
+  const docA = `pick-A-${tag}.txt`, docB = `pick-B-${tag}.txt`;
 
   // Create two notepad docs the picker can later show.
   await r("os.switch")(state, "notepad");
@@ -112,8 +112,8 @@ test("file picker — app-scoping: notepad's picker excludes sheet files", async
   const r = (k) => resolveFn(state, k);
 
   const tag = `sc${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
-  const sheetDoc = `book-${tag}`;
-  const notepadDoc = `notes-${tag}`;
+  const sheetDoc = `book-${tag}.csv`;
+  const notepadDoc = `notes-${tag}.txt`;
 
   // One sheet doc + one notepad doc, side by side.
   await r("os.switch")(state, "sheets");

@@ -50,6 +50,10 @@ const setupNotepad = async (): Promise<void> => {
     role: "application",
     cels: [
       { key: "notepad.text", celType: "ValueCel", metadata: { key: "notepad.text", segment: "notepad" }, v: "" },
+      // Each app advertises its file type (key/title/extension/icon) in this
+      // cel; file-explorer reads it via fe.register-app at boot.
+      { key: "notepad.app-type", celType: "ValueCel", metadata: { key: "notepad.app-type", segment: "notepad" },
+        v: { key: "notepad", title: "Notepad", extension: "txt", icon: "📝" } },
       { key: "notepad.mount", celType: "FormulaCel", metadata: { key: "notepad.mount", segment: "notepad", parser: "f", inputMap: { active: "os.active" } }, f: `(if (eq active "notepad") "#app" null)` },
       {
         key: "notepad.view", celType: "FormulaCel",
@@ -62,6 +66,9 @@ const setupNotepad = async (): Promise<void> => {
   // Doc binding: file.new / file.save / file.open retarget notepad.text into
   // the active user-space so its content round-trips through segment-store.
   registerDocBinding({ app: "notepad", cels: ["notepad.text"], empty: () => "" });
+  // Register with the file-explorer's app-type registry so file cards show
+  // our icon and the toolbar appends our extension on Save.
+  await (r("fe.register-app") as (...a: unknown[]) => Promise<unknown>)(state, state.cels.get("notepad.app-type")?.v);
 };
 
 // ── Doom asset loader — OPFS-seed-once, then embedded gz blob, then fetch ──
@@ -138,6 +145,10 @@ const setupDoom = async (): Promise<void> => {
         f: `(if (eq active "doom") "#app" null)` },
       { key: "doom.status", celType: "ValueCel",
         metadata: { key: "doom.status", segment: "doom" }, v: "" },
+      // App-type advertisement — file-explorer + picker use this for icons.
+      { key: "doom.app-type", celType: "ValueCel",
+        metadata: { key: "doom.app-type", segment: "doom" },
+        v: { key: "doom", title: "Doom", extension: "wad", icon: "🎮" } },
       {
         key: "doom.view", celType: "FormulaCel",
         metadata: { key: "doom.view", segment: "doom", parser: "html-template",
@@ -165,21 +176,36 @@ const setupDoom = async (): Promise<void> => {
   // Register doom.maybe-boot BEFORE hydrate so the auto-boot FormulaCel's
   // initial firing (against os.active="home") finds it. Without this the
   // first evaluation would CelError (formula references unregistered fn).
+  //
+  // Two transitions matter here:
+  //   active → "doom"   : boot the engine (RAF-deferred so the canvas is in
+  //                       the DOM); idempotent against a live harness.
+  //   active → anything : stop the live engine (cancels its RAF tick loop)
+  //                       and clear the reference so the next entry is fresh.
+  // This is what makes the × close-button genuinely shut Doom down.
   await r("registerLambda")(state, {
     key: "doom.maybe-boot", kind: "custom",
     fn: (active: unknown): null => {
-      if (active === "doom" && !doomHarness && !booting && typeof requestAnimationFrame === "function") {
-        // Wait one frame so the painter has mounted #doom-screen.
-        requestAnimationFrame(() => {
-          const boot = r("doom.boot") as (...a: unknown[]) => Promise<unknown>;
-          void boot(state);
-        });
+      if (active === "doom") {
+        if (!doomHarness && !booting && typeof requestAnimationFrame === "function") {
+          // Wait one frame so the painter has mounted #doom-screen.
+          requestAnimationFrame(() => {
+            const boot = r("doom.boot") as (...a: unknown[]) => Promise<unknown>;
+            void boot(state);
+          });
+        }
+      } else if (doomHarness) {
+        // Leaving Doom (× or app switch). Stop the tick loop and forget the
+        // harness so re-entry boots a clean engine.
+        doomHarness.stop();
+        doomHarness = null;
       }
       return null;
     },
   });
 
   await r("hydrate")(state, [seg], [{ name: "doom", version: "0.0.1", dependencies: seg.dependencies, role: "application" }]);
+  await (r("fe.register-app") as (...a: unknown[]) => Promise<unknown>)(state, state.cels.get("doom.app-type")?.v);
 
   // Internal: stand up the kind:"wasm" cel + start the harness, given
   // pre-fetched WAD bytes. Resolves doom.wasm from the bundle's inlined
@@ -207,7 +233,14 @@ const setupDoom = async (): Promise<void> => {
     doomHarness = createDoomHarness(wadBytes, {
       canvas, wadName,
       onLog: (line) => console.info("[doom]", line),
-      onExit: (code) => console.info("[doom] proc_exit", code),
+      // Doom called proc_exit (user picked Quit from the menu, or any
+      // fatal trap). Clear the harness reference so the next switch back
+      // to the Doom view auto-boots a fresh engine rather than landing
+      // on a dead instance.
+      onExit: (code) => {
+        console.info("[doom] proc_exit", code);
+        doomHarness = null;
+      },
       // Sound omitted — the OS app doesn't wire env.snd_* into the sound
       // segment yet; the harness runs silently without the callbacks.
     });
@@ -302,15 +335,68 @@ await setupDesktop(state, [
   { id: "file-explorer", title: "Files", icon: "🗂" },
   { id: "doom", title: "Doom", icon: "🎮" },
 ]);
+// File Explorer is the platform layer applications register against: it owns
+// fe.app-types (icon + extension per app), fs-tree (folders + locations),
+// and the file listing. Mount it FIRST so subsequent apps can self-register
+// at their own setup time via fe.register-app.
+await setupFileExplorer(state);
 await setupFileToolbar(state);
+await setupFilePicker(state);   // shared Open modal — depends on fe cels at runtime
 await buildSheetsApp(state, {
   rows: 8, cols: 5,
   cells: { A1: "Item", B1: "Qty", C1: "Price", D1: "Total", A2: "Widget", B2: "3", C2: "4", D2: "=B2*C2", A3: "Gadget", B3: "5", C3: "2", D3: "=B3*C3", D4: "=D2+D3" },
 });
 await setupNotepad();
-await setupFileExplorer(state);
-await setupFilePicker(state);   // shared Open modal — must come AFTER setupFileExplorer
 await setupDoom();
+
+// ── seed the desktop on first boot ─────────────────────────────────────────
+// /Desktop is always present (file-explorer seeds it). The README is created
+// as a notepad doc the first time the OS boots; subsequent boots see it in
+// segment-store and skip seeding. The user can edit, move, or "delete" (via
+// a future delete UI) it like any other doc.
+const seedDesktopReadme = async (): Promise<void> => {
+  const READ_ME = "README.txt";
+  const storeHas = r("store.has") as (n: string) => Promise<boolean>;
+  if (await storeHas(READ_ME)) return;                  // already exists in OPFS / node-fs
+  if (state.segments.has(READ_ME)) return;              // or already loaded in this session
+
+  await (r("newUserSpace") as (...a: unknown[]) => Promise<unknown>)(state, READ_ME, "notepad", { autoSave: false });
+  await (await import("./doc-binding.js")).rebindCelsToDoc(state, "notepad", READ_ME, { clear: true });
+  await r("set")(state, "notepad.text",
+    [
+      "🐢  Welcome to plastron-OS",
+      "",
+      "This is a notepad doc, just like any other you'd make with 📝 Notepad.",
+      "It lives on your Desktop in the file explorer.",
+      "",
+      "What's here:",
+      "  📊 Sheets — formula-driven spreadsheet. Click a cell, type =A1*B1 in",
+      "       the formula bar, hit ✓.",
+      "  📝 Notepad — a single textarea bound to a cel. Use 💾 Save to keep it.",
+      "  🗂 Files — folders, drag-and-drop, the Desktop you're reading this from.",
+      "       File icons come from each app's registered extension (.txt, .csv,",
+      "       .wad). Drag a file onto a folder to move it.",
+      "  🎮 Doom — Freedoom 1 in your browser via doomgeneric → wasm.",
+      "",
+      "Every app shares one toolbar — 📄 New, 💾 Save, 📂 Open. Open shows a",
+      "modal file picker scoped to that app's file type. New + Save use the",
+      "app's extension automatically.",
+      "",
+      "Your work persists in this browser's OPFS storage. Clearing site data",
+      "wipes it. There's no cloud sync — that's by design (single-file, open-",
+      "anywhere is the eventual product shape).",
+      "",
+      "Source + roadmap: https://github.com/rheophile10/plastron",
+      "",
+      "— plastron",
+    ].join("\n"),
+  );
+  await (r("saveUserSpace") as (...a: unknown[]) => Promise<unknown>)(state, READ_ME);
+  // File it onto the Desktop and refresh the listing so the next paint shows it.
+  await (r("fe.move") as (...a: unknown[]) => Promise<unknown>)(state, READ_ME, "/Desktop");
+  await (r("fe.refresh") as (...a: unknown[]) => Promise<unknown>)(state);
+};
+await seedDesktopReadme();
 
 precompute(state);
 await precomputeOptional(state);

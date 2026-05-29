@@ -104,10 +104,33 @@ const scHomeScreen = async (page: Page): Promise<void> => {
   }
 };
 
+// ── scenario 1b — Desktop README is the first thing you see in Files ────────
+const scDesktopReadme = async (page: Page): Promise<void> => {
+  console.log("\n▶ Scenario 1b — Files opens to /Desktop with the README");
+  await page.locator('button:has-text("Files")').first().click();
+  ok(await waitForCel(page, "os.active", "file-explorer"), "Files launched");
+  ok(await waitForCel(page, "file-explorer.cwd", "/Desktop"), "starts on /Desktop");
+
+  // README card visible with the notepad icon (📝, from fe.app-types).
+  await page.locator('div.card.file:has-text("README.txt")').first().waitFor({ state: "visible", timeout: 2000 });
+  const readme = page.locator('div.card.file:has-text("README.txt")').first();
+  ok(await readme.isVisible(), "README.txt visible on Desktop");
+  ok((await readme.innerText()).includes("📝"), "README has the notepad icon");
+
+  // Click → opens it in Notepad with the welcome content.
+  await readme.click();
+  ok(await waitForCel(page, "os.active", "notepad"), "Notepad opened to read README");
+  ok(await waitForCel(page, "os.doc", "README.txt"), "os.doc=README.txt");
+  const text = (await cel(page, "notepad.text") as string | undefined) ?? "";
+  ok(text.includes("plastron-OS"), "README mentions plastron-OS");
+
+  await exitToHome(page);
+};
+
 // ── scenario 2 — Notepad full lifecycle ─────────────────────────────────────
 const scNotepadLifecycle = async (page: Page, suffix: string): Promise<{ docA: string; docB: string }> => {
   console.log("\n▶ Scenario 2 — Notepad lifecycle (New/Save/Open/Close)");
-  const docA = `notes-A-${suffix}`, docB = `notes-B-${suffix}`;
+  const docA = `notes-A-${suffix}.txt`, docB = `notes-B-${suffix}.txt`;
 
   await page.locator('button:has-text("Notepad")').first().click();
   ok(await waitForCel(page, "os.active", "notepad"), "Notepad launched");
@@ -175,6 +198,10 @@ const scFileExplorerNavigate = async (page: Page, docA: string, docB: string): P
   await page.locator('button:has-text("Files")').first().click();
   ok(await waitForCel(page, "os.active", "file-explorer"), "File Explorer launched");
 
+  // The default cwd is /Desktop now; nav to / so the rest of this scenario
+  // sees the same starting view it always did.
+  await callFn(page, "fe.cd", "/");
+  await waitForCel(page, "file-explorer.cwd", "/");
   await callFn(page, "fe.refresh");
   await page.waitForTimeout(100);
 
@@ -313,7 +340,7 @@ const scDragDropDispatch = async (page: Page, docB: string): Promise<void> => {
 // creates a fresh doc to exercise the picker on.
 const scOpenPicker = async (page: Page, suffix: string): Promise<void> => {
   console.log("\n▶ Scenario 4c — Notepad's Open shows a picker modal");
-  const docC = `notes-picker-${suffix}`;
+  const docC = `notes-picker-${suffix}.txt`;
 
   await page.locator('button:has-text("Notepad")').first().click();
   ok(await waitForCel(page, "os.active", "notepad"), "Notepad launched");
@@ -368,7 +395,7 @@ const scSheetsRoundTrip = async (page: Page, suffix: string): Promise<void> => {
   await page.locator('td[data-addr="A1"]').first().waitFor({ state: "attached", timeout: 2000 }).catch(() => {});
   ok((await page.locator('td[data-addr="A1"]').count()) > 0, "grid attached (A1 cell present)");
 
-  const docA = `book-A-${suffix}`, docB = `book-B-${suffix}`;
+  const docA = `book-A-${suffix}.csv`, docB = `book-B-${suffix}.csv`;
 
   // New A → A1 = "Apples" via the formula bar.
   await callFn(page, "file.new", docA);
@@ -413,6 +440,7 @@ export const runScenarios = async (baseURL: string): Promise<number> => {
   try {
     const { ctx, page } = await newPage(browser, baseURL);
     await scHomeScreen(page);
+    await scDesktopReadme(page);
     const { docA, docB } = await scNotepadLifecycle(page, suffix);
     await scFileExplorerNavigate(page, docA, docB);
     await scFileExplorerMkdirAndDragDrop(page, docA, suffix);

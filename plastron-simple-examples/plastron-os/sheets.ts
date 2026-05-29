@@ -182,6 +182,12 @@ export const buildSheetsApp = async (
     metadata: { key: "sheet.mount", segment: "sheets", parser: "f", inputMap: { active: "os.active" } },
     f: `(if (eq active "sheets") "#app" null)`,
   });
+  // App-type advertisement — file-explorer + picker read this for our file icon.
+  seg.cels.push({
+    key: "sheets.app-type", celType: "ValueCel",
+    metadata: { key: "sheets.app-type", segment: "sheets" },
+    v: { key: "sheets", title: "Sheets", extension: "csv", icon: "📊" },
+  });
   seg.cels.push({
     key: "sheet.view", celType: "FormulaCel",
     metadata: {
@@ -195,4 +201,8 @@ export const buildSheetsApp = async (
   const deps = ["sheet", "app-host", "html-template-parser", "plastron-dom", "segment-store", "user-space-ops"];
   const hydrate = resolveFn(state, "hydrate") as (s: unknown, segs: unknown, m: unknown) => Promise<unknown>;
   await hydrate(state, [{ ...seg, dependencies: deps, role: "application" }], [{ name: "sheets", version: "0.1.0", dependencies: deps, role: "application" }]);
+  // Register with the file-explorer's app-type registry (a no-op if
+  // file-explorer hasn't booted yet — bootOS arranges the order so it has).
+  const registerApp = resolveFn(state, "fe.register-app") as ((...a: unknown[]) => Promise<unknown>) | undefined;
+  if (registerApp) await registerApp(state, state.cels.get("sheets.app-type")?.v);
 };

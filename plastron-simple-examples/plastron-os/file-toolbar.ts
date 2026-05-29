@@ -46,6 +46,17 @@ const ask = (msg: string, def?: string): string | null => {
   return p ? p(msg, def) : null;
 };
 
+/** Append the active app's extension to `name` if it isn't already there.
+ *  Reads fe.app-types (populated at boot via fe.register-app); a no-op when
+ *  the app has no registered extension. */
+const withExtension = (state: any, app: string, name: string): string => {
+  const types = ((resolveFn(state, "get") as (...a: unknown[]) => unknown)(state, "fe.app-types") as Record<string, { extension?: string }> | undefined) ?? {};
+  const ext = (types[app]?.extension ?? "").trim();
+  if (!ext) return name;
+  const dotExt = `.${ext}`;
+  return name.toLowerCase().endsWith(dotExt.toLowerCase()) ? name : `${name}${dotExt}`;
+};
+
 // ── file.new ────────────────────────────────────────────────────────────────
 
 /** Create a fresh empty user-space under the active app: blank editor cels
@@ -54,8 +65,9 @@ export const fileNew = async (state: any, namePayload?: string): Promise<string 
   const app = currentApp(state);
   if (!app) return undefined;
   const fallback = `${app}-${new Date().toISOString().slice(0, 10)}-${Math.random().toString(36).slice(2, 6)}`;
-  const name = namePayload ?? ask(`New ${app} — name?`, fallback) ?? undefined;
-  if (!name) return undefined;
+  const raw = namePayload ?? ask(`New ${app} — name?`, fallback) ?? undefined;
+  if (!raw) return undefined;
+  const name = withExtension(state, app, raw);
   // autoSave: false — we'll persist once the editor cels are retargeted below.
   await (resolveFn(state, "newUserSpace") as Function)(state, name, app, { autoSave: false });
   await rebindCelsToDoc(state, app, name, { clear: true });
@@ -82,8 +94,9 @@ export const fileSave = async (state: any): Promise<string | undefined> => {
   const app = currentApp(state);
   if (!app) return undefined;
   const fallback = `${app}-${new Date().toISOString().slice(0, 10)}-${Math.random().toString(36).slice(2, 6)}`;
-  const name = ask(`Save ${app} as —`, fallback) ?? undefined;
-  if (!name) return undefined;
+  const raw = ask(`Save ${app} as —`, fallback) ?? undefined;
+  if (!raw) return undefined;
+  const name = withExtension(state, app, raw);
   await (resolveFn(state, "newUserSpace") as Function)(state, name, app, { autoSave: false });
   await rebindCelsToDoc(state, app, name);          // preserve content
   await (resolveFn(state, "set") as Function)(state, "os.doc", name, { flush: "all" });

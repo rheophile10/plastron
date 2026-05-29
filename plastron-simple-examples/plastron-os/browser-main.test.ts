@@ -85,7 +85,7 @@ test("Notepad doc round-trip — New A → type → Save → New B → type → 
   const get = (k) => r("get")(state, k);
   // Unique suffixes so successive runs against the same node-fs root don't collide.
   const tag = `t${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
-  const docA = `notepad-A-${tag}`, docB = `notepad-B-${tag}`;
+  const docA = `notepad-A-${tag}.txt`, docB = `notepad-B-${tag}.txt`;
   const pad = () => walk(root, (n) => n.tag === "textarea")[0];
   const typeInto = async (text) => { const p = pad(); p.value = text; p.fire("input"); await tick(); painter.drain(); };
 
@@ -149,7 +149,7 @@ test("File Explorer lists user-spaces created by Notepad and opens them", async 
   const r = (k) => resolveFn(state, k);
   const get = (k) => r("get")(state, k);
   const tag = `fe${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
-  const docA = `fe-A-${tag}`;
+  const docA = `fe-A-${tag}.txt`;
 
   // Launch Notepad → New → type → Save.
   button(root, "Notepad").fire("click");
@@ -189,7 +189,7 @@ test("Sheets doc round-trip — New A → edits → Save → New B → edits →
   const r = (k) => resolveFn(state, k);
   const get = (k) => r("get")(state, k);
   const tag = `sh${Date.now().toString(36)}${Math.random().toString(36).slice(2, 5)}`;
-  const docA = `sheets-A-${tag}`, docB = `sheets-B-${tag}`;
+  const docA = `sheets-A-${tag}.csv`, docB = `sheets-B-${tag}.csv`;
 
   button(root, "Sheets").fire("click");
   await tick(); painter.drain();

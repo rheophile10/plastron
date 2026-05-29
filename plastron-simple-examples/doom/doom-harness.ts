@@ -433,31 +433,40 @@ export function createDoomHarness(
   }
 
   // ── Key routing ───────────────────────────────────────────────────────
-  // doomgeneric's doomkeys.h. A small but playable subset.
+  // doomgeneric's doomkeys.h. KEY_USE/FIRE/STRAFE_* are symbolic codes in
+  // the 0xa0..0xaf range — doom's default key_use binding looks for 0xa2,
+  // NOT the literal ASCII 0x20 (space). Mapping spacebar to 0x20 sends
+  // doom the space character, which it ignores in-game — that's why
+  // pressing space wasn't opening doors. Use the symbolic codes.
   const KEY_RIGHTARROW = 0xae;
   const KEY_LEFTARROW  = 0xac;
   const KEY_UPARROW    = 0xad;
   const KEY_DOWNARROW  = 0xaf;
+  const KEY_STRAFE_L   = 0xa0;
+  const KEY_STRAFE_R   = 0xa1;
+  const KEY_USE        = 0xa2;   // doom symbolic — what key_use defaults to
+  const KEY_FIRE       = 0xa3;   // doom symbolic — what key_fire defaults to
   const KEY_ENTER      = 13;
   const KEY_ESCAPE     = 27;
-  const KEY_USE        = 0x20; // space
-  const KEY_FIRE       = 0xa3; // doom KEY_RCTRL
+  const KEY_TAB        = 9;
   const KEY_RSHIFT     = 0xb6;
   const KEY_RALT       = 0xb8;
-  const KEY_TAB        = 9;
-  const KEY_SPACE      = 0x20;
 
   const map: Record<string, number> = {
     ArrowUp: KEY_UPARROW, ArrowDown: KEY_DOWNARROW,
     ArrowLeft: KEY_LEFTARROW, ArrowRight: KEY_RIGHTARROW,
     Enter: KEY_ENTER, Escape: KEY_ESCAPE,
-    Tab: KEY_TAB, " ": KEY_USE, Space: KEY_USE,
+    Tab: KEY_TAB,
+    " ": KEY_USE, Space: KEY_USE,           // spacebar → open doors / use
     Control: KEY_FIRE, ControlLeft: KEY_FIRE, ControlRight: KEY_FIRE,
     Shift: KEY_RSHIFT, ShiftLeft: KEY_RSHIFT, ShiftRight: KEY_RSHIFT,
     Alt: KEY_RALT, AltLeft: KEY_RALT, AltRight: KEY_RALT,
+    // Strafe — both `,`/`.` (doomgeneric's defaults) and Q/E (modern WASD).
+    ",": KEY_STRAFE_L, ".": KEY_STRAFE_R,
+    q: KEY_STRAFE_L,  e: KEY_STRAFE_R,
   };
   for (const c of "abcdefghijklmnopqrstuvwxyz0123456789") {
-    map[c] = c.charCodeAt(0);
+    if (!(c in map)) map[c] = c.charCodeAt(0);
   }
   let keyListenersAttached = false;
   function onKey(pressed: number, e: KeyboardEvent) {
