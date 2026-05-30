@@ -230,6 +230,14 @@ const setupDoom = async (): Promise<void> => {
 
     await setStatus("building harness…");
     const { createDoomHarness } = await import("../doom/doom-harness.js");
+    // Forward env.snd_* (Doom mixer) into the kernel's `sound` segment.
+    // The harness parses DMX SFX headers + converts 8-bit PCM → Float32;
+    // we just hand the resulting samples to sound.play-pcm and track
+    // per-channel handles via stop/update/is-playing.
+    const playPcm    = r("sound.play-pcm")      as (s: unknown, a: unknown) => number;
+    const stopSrc    = r("sound.stop-source")   as (s: unknown, h: number) => void;
+    const updateSrc  = r("sound.update-source") as (s: unknown, h: number, a: unknown) => void;
+    const isPlaying  = r("sound.is-playing")    as (s: unknown, h: number) => boolean;
     doomHarness = createDoomHarness(wadBytes, {
       canvas, wadName,
       onLog: (line) => console.info("[doom]", line),
@@ -241,8 +249,10 @@ const setupDoom = async (): Promise<void> => {
         console.info("[doom] proc_exit", code);
         doomHarness = null;
       },
-      // Sound omitted — the OS app doesn't wire env.snd_* into the sound
-      // segment yet; the harness runs silently without the callbacks.
+      playPcm:      (info)  => playPcm(state, info),
+      stopPcm:      (h)     => stopSrc(state, h),
+      updatePcm:    (h, a)  => updateSrc(state, h, a),
+      isPcmPlaying: (h)     => isPlaying(state, h),
     });
 
     await setStatus("hydrating wasm cel…");
